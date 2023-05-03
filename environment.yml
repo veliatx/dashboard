@@ -1,0 +1,26 @@
+name: veliadash
+
+dependencies:
+  - ipython
+  - seaborn
+  - pandas
+  - jupyterlab
+  - pip
+  - python>=3.8
+  - pip:
+    - streamlit-aggrid
+    - streamlit
+    - openpyxl
+    - streamlit-plotly-events
+    - plotly
+    - scipy
+    - seaborn_altair
+    - jsonlines
+    - py3Dmol==2.0.0.post2
+    - stmol==0.0.9
+    - streamlit-scrollable-textbox
+    - tqdm
+    - statsmodels
+    - altair
+
+    
