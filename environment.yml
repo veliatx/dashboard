@@ -22,5 +22,8 @@ dependencies:
     - tqdm
     - statsmodels
     - altair
+    - boto3
+    - smart_open
+    - biopython
 
     
