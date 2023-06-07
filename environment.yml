@@ -1,14 +1,15 @@
 name: veliadash
 
 dependencies:
-  - ipython
-  - seaborn
-  - pandas
-  - jupyterlab
   - pip
   - python>=3.8
   - pip:
     - streamlit-aggrid
+    - pandas
+    - ipython
+    - ipykernel
+    - seaborn
+    - jupyterlab
     - streamlit
     - openpyxl
     - streamlit-plotly-events
@@ -22,8 +23,16 @@ dependencies:
     - tqdm
     - statsmodels
     - altair
-    - boto3
+    - aiobotocore
+    - s3fs
     - smart_open
+    - boto3
     - biopython
+    - streamlit-echarts
+    - pyfaidx
+    - git-remote-codecommit
+    - git+codecommit::us-west-2://veliadb
+    - git+codecommit::us-west-2://conservation
+    
 
     

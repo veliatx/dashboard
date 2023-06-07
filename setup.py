@@ -1,0 +1,19 @@
+# -*- coding: utf-8 -*-
+
+from os.path import abspath, dirname
+from sys import path
+from setuptools import setup, find_packages
+
+setup(
+    name='dashboard',
+    version='0.0.1',
+    description="""Velia Dashboard facilitates visualization and exploration of sORF related data.""",
+    author='Rob Foreman',
+    author_email='rob@veliatx.com',
+    classifiers=[
+        'Programming Language :: Python :: 3.9',
+    ],
+    keywords='microproteins',
+    packages=find_packages(),
+    install_requires=[]
+)

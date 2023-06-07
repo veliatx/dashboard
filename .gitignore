@@ -1,0 +1,11 @@
+data/*
+nohup.out
+dashboard/etl/gencode*
+dashboard/etl/reference*
+dashboard/etl/.ipynb_checkpoints/
+dashboard/etl/GRCh38_latest_rna.fna
+sorf_expression_tcga_gtex_target.xlsx
+dashboard/etl/__pycache__/
+*.ipynb_checkpoints*
+*__pycache__*
+*.jsonlines

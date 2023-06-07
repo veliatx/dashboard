@@ -55,4 +55,62 @@ def extract_nucleotide_sequence_broken_psl_starts(orf, reference):
         nucl = ' '.join(nucl)
     else:
         nucl = ' '.join(nucl)
-    return nucl, str(Seq.Seq(nucl.replace(' ', '')).translate())
+    return nucl, str(Seq(nucl.replace(' ', '')).translate())
+
+import pyfaidx
+import fsspec
+from tqdm import tqdm
+import os
+
+# deduped_conservation = pd.read_parquet('deduped_phylocsf_length_filtered.parq')
+transcripts = pyfaidx.Fasta('./gencode.v42.transcripts.fa')
+
+def find_seq_substring(query, target_dict):
+    return [k for k, s in target_dict.items() if query.lower() in s[:].seq.lower()]
+
+if not os.path.exists('reference.fa'):
+    with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
+        with open('reference.fa', 'w') as f:
+            for line in tqdm(fhandle.readlines()):
+                f.write(line)
+def query_overlapping_transcripts(o, session):
+    results = session.query(Transcript).filter(and_(o.start >= Transcript.start, 
+                                      o.end <= Transcript.end, 
+                                      o.strand == Transcript.strand,
+                                      o.assembly_id == Transcript.assembly_id)).all()
+    return results
+
+def compute_exact_transcript_matches(o):
+    nt, aa = extract_nucleotide_sequence_broken_psl_starts(current_orf, reference)
+    r = find_seq_substring(nt, transcripts)
+    return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r]
+
+def run_id_mapping_parallel(orfs):
+    import multiprocessing as mp
+    NCPU = mp.cpu_count()
+    with mp.Pool(NCPU) as ppool:
+        results = {}
+        for r in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
+            results[r[0]] = r[1:]
+    return results
+                
+GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
+reference = pyfaidx.Fasta('reference.fa')
+
+# with jsonlines.open('sorf_table.jsonlines', mode = 'w') as fh:
+#     for current_orf in tqdm(orfs):
+#         nt, aa = extract_nucleotide_sequence_broken_psl_starts(current_orf, reference)
+#         tids = find_seq_substring(nt, transcripts)
+#         # if len(tids)>0:
+#         tids = [i.split('|')[0].split('.')[0] for i in tids]
+#         attributes = {
+#             'chr': current_orf.assembly.ucsc_style_name,
+#             'vtx': f"VTX-{str(current_orf.id).zfill(7)}",
+#             'strand': current_orf.strand,
+#             'start': current_orf.start,
+#             'end': current_orf.end,
+#             'nucl': nt,
+#             'aa': aa,
+#             'transcripts': tids
+#         }
+#         fh.write(attributes)
