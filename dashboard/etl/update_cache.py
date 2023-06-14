@@ -6,13 +6,13 @@ import numpy as np
 import jsonlines
 import pandas as pd
 import sys
-
+NCPU = None
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
 if __name__ == '__main__':
-    OUTPUT_DIR = '../../.cache'
+    OUTPUT_DIR = '../../cache'
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     input_file = sys.argv[1]
@@ -21,11 +21,12 @@ if __name__ == '__main__':
     # Query DB
     session = base.Session() # connect to db
     orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
+    orfs = [OrfData(i) for i in orfs]
     missing_orfs = set(ids) - set([i.id for i in orfs])
     if len(missing_orfs) > 0:
         print('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
 
-    transcript_matching_results = run_id_mapping_parallel(orfs, NCPU = 1) # implemented for multithreading but had issues with db access in multiprocessing
+    transcript_matching_results = run_id_mapping_parallel(orfs, NCPU = NCPU) # implemented for multithreading but had issues with db access in multiprocessing
 
     # Loop over orfs, and populate sorf_table file with attributes of interest
     transcripts_to_map = []
