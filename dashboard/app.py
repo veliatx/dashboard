@@ -16,36 +16,83 @@ from stmol import showmol
 import py3Dmol
 from scipy.stats import ranksums
 from statsmodels.stats.multitest import multipletests
+from streamlit_echarts import st_echarts
+from scipy.cluster.hierarchy import linkage, leaves_list
+
 
 from plotting import plot_structure_plddt
 
 # Load data
 @st.cache_data()
 def load_sorf_excel():
-    sorf_excel_table = pd.read_excel('./data/interim_phase1to6_secreted_hits_20230330.xlsx')
+    """
+    """
+    sorf_excel_table = pd.read_excel('../data/interim_phase1to6_secreted_hits_20230330.xlsx')
     return sorf_excel_table
+
 
 @st.cache_data()
 def load_esmfold():
+    """
+    """
     esmfold = {}
-    with jsonlines.open('./data/phase1to6_secreted_esmfold.json') as fopen:
+    with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
         for l in fopen.iter():
             esmfold[l['sequence']] = l
     return esmfold
 
+
 @st.cache_data()
 def load_xena_tcga_gtex_target():
-    xena_metadata = pd.read_table('./data/TcgaTargetGTEX_phenotype.txt', encoding='latin-1', index_col=0)
-    xena_expression = pd.read_feather('./data/xena_ucsc_phase1to6.feather')
+    xena_metadata = pd.read_table('../data/TcgaTargetGTEX_phenotype.txt', encoding='latin-1', index_col=0)
+    xena_expression = pd.read_feather('../data/xena_ucsc_phase1to6.feather')
     xena_expression.index = xena_expression.pop('index')
     xena_metadata = xena_metadata.loc[xena_expression.index]
-    vtx_id_to_transcripts = json.load(open('./data/vtx_to_ensembl_ids.json', 'r'))
+    vtx_id_to_transcripts = json.load(open('../data/vtx_to_ensembl_ids.json', 'r'))
     return xena_metadata, xena_expression, vtx_id_to_transcripts
+
+@st.cache_data()
+def load_xena_heatmap():
+    
+    xena_metadata_df, xena_exp_df, vtx_id_to_transcripts = load_xena_tcga_gtex_target()
+    
+    transcript_to_vtx_id = {}
+
+    for k, vals in vtx_id_to_transcripts.items():
+        for val in vals:
+            transcript_to_vtx_id[val] = k
+    
+    xena_exp_df = xena_exp_df.T
+    xena_exp_df['vtx_id'] = xena_exp_df.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
+    xena_exp_df = xena_exp_df.groupby('vtx_id').aggregate(np.mean).T
+    xena_exp_df = xena_exp_df.merge(xena_metadata_df, left_index=True, right_index=True)
+    transcript_col_names = [i for i in xena_exp_df.columns if i not in xena_metadata_df.columns]
+    xena_exp_df = xena_exp_df[transcript_col_names].groupby(xena_exp_df['_primary_site']).aggregate(np.mean)
+
+    # compute the clusters
+    row_clusters = linkage(xena_exp_df.T.values, method='complete', metric='euclidean')
+    col_clusters = linkage(xena_exp_df.values, method='complete', metric='euclidean')
+
+    # compute the leaves order
+    row_leaves = leaves_list(row_clusters)
+    col_leaves = leaves_list(col_clusters)
+
+    # reorder the DataFrame according to the clusters
+    plot_df = xena_exp_df.T.iloc[row_leaves, col_leaves]
+
+    col_map = {x: i for i,x in enumerate(plot_df.columns)}
+    row_map = {x: i for i,x in enumerate(plot_df.index)}
+    data = [(row_map[k[0]], col_map[k[1]], v) for k,v in plot_df.stack().items()]
+    
+    col_names = list(col_map.keys())
+    row_names = list(row_map.keys())
+
+    return data, col_names, row_names
 
 @st.cache_data()
 def load_mouse_blastp_results():
     hits_per_query = defaultdict(list)
-    with open('./data/phase1to6_secreted_mouse_blastp.json', 'r') as fopen:
+    with open('../data/phase1to6_secreted_mouse_blastp.json', 'r') as fopen:
         blastp = json.load(fopen)
         blastp = blastp['BlastOutput2']
     for entry in blastp:
@@ -68,13 +115,14 @@ def load_mouse_blastp_results():
                 hits_per_query[q].append(alignment)
     return hits_per_query
 
+
 @st.cache_data()
 def load_tcga_tumor_vs_nat(xena_metadata, xena_expression):
-    cancers = pd.read_csv('./data/cancer_types.txt', header=None, names = ['Disease', 'Code'])
+    cancers = pd.read_csv('../data/cancer_types.txt', header=None, names = ['Disease', 'Code'])
     cancers.index = [i.lower() for i in cancers['Disease']]
     tcga_paired_normal = {}
     tcga_paired_normal_index = []
-    pairs = pd.read_excel('./data/tissue_pairs.xlsx')
+    pairs = pd.read_excel('../data/tissue_pairs.xlsx')
     for ix, row in pairs.iterrows():
         if isinstance(row['NAT (Solid Tissue Normal)'], str):
             tcga_groups = xena_metadata[(xena_metadata['_primary_site'] == row['Tissue (Disease)']) & (xena_metadata['_study'] == 'TCGA')].copy()
@@ -111,8 +159,9 @@ def load_tcga_tumor_vs_nat(xena_metadata, xena_expression):
     logfcs = tumor.mean(axis=0) - normal.mean(axis=0)
     return ave_per_transcript_per_cancer
 
-def sorf_table():
-    st.title("sORF Explorer")
+
+def sorf_table(sorf_excel_table):
+    st.title("sORF Library")
     st.write("Table contains secreted sORFs.")
     gd = GridOptionsBuilder.from_dataframe(sorf_excel_table)
     gd.configure_pagination(enabled=True)
@@ -126,6 +175,60 @@ def sorf_table():
                      update_mode = GridUpdateMode.GRID_CHANGED,
                      reload_data = False,
                      editable = False)
+
+
+def sorf_heatmap():
+    st.title("sORF Transcriptome Atlas")
+    st.write("Table contains secreted sORFs.")
+    
+    data, col_names, row_names = load_xena_heatmap()
+
+    option = {
+        "tooltip": {},
+        "xAxis": {
+            "type": "category", 
+            "data": row_names, 
+            "axisLabel": {
+                "fontSize": 10,
+                "rotate": -90,
+                "width": 100,
+            }
+            },
+        "yAxis": {
+            "type": "category", 
+            "data": col_names, 
+            },
+        "visualMap": {
+            "min": 0,
+            "max": 10,
+            "calculable": True,
+            "realtime": False,
+            "orient": "horizontal",
+            "left": "center",
+            "top": "0%",
+        },
+        "series": [
+            {
+                "name": "Log2(TPM+1)",
+                "type": "heatmap",
+                "data": data,
+                #"label": {"show": True},
+                "emphasis": {
+                    "itemStyle": {
+                       "borderColor": '#333',
+                        "borderWidth": 1
+                    }
+                },
+                "progressive": 1000,
+                "animation": False,
+            }
+        ],
+    }
+    with st.container():
+        st_echarts(option, height="1000px")
+
+
+
 def ucsc_link(chrom, start, end):
     base_link = "http://genome.ucsc.edu/cgi-bin/hgTracks?"
     genome = "db=hg38"
@@ -133,12 +236,13 @@ def ucsc_link(chrom, start, end):
     ucsc_link = f"{base_link}{genome}&position={position}"
     return ucsc_link
 
+
 # Function per page
-def details():
+def details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcripts, ave_per_transcript_per_cancer, esmfold, blastp_mouse_hits):
     # Header text
-    st.title('Details for a sORF')
+    st.title('sORF Details')
     # Select a single sORF to plot and convert ID to vtx_id
-    st.session_state['id_type_selected'] = st.radio("ID Type", options=('vtx_id', 'primary_id', 'genscript_id'), index=1)
+    st.session_state['id_type_selected'] = st.radio("ID Type", options=('vtx_id', 'primary_id', 'genscript_id'), index=0, horizontal=True)
     st.session_state['detail_id_seleceted'] = st.selectbox("Select ORF", options = sorf_excel_table[st.session_state['id_type_selected']])
     if st.session_state['id_type_selected'] == 'vtx_id':
         vtx_id = st.session_state['detail_id_seleceted']
@@ -175,11 +279,12 @@ def details():
     structure = esmfold[sorf_aa_seq]['pdb']
     plddt = esmfold[sorf_aa_seq]['plddt']
     # Plot esmfold structure
+    st.title('sORF ESMfold')
     view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
     view.addModel(structure, 'pdb')
     view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
     view.zoomTo()
-    showmol(view, height=500, width=800)
+    showmol(view, height=500, width=1200)
     # Plot plDDT
     fig, ax = plot_structure_plddt(plddt)
     st.pyplot(fig)
@@ -201,7 +306,7 @@ def details():
     stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
                   
     
-def selector():
+def selector(sorf_excel_table):
     st.title("Select sORFs Interactively")
     st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_excel_table.columns, index=0)
     st.session_state['y_feature'] = st.selectbox("Select Y Feature", options = sorf_excel_table.columns, index=1)
@@ -210,27 +315,43 @@ def selector():
     selected_points = plotly_events(fig)
     st.write(selected_points)
 
+
 # Define the main function that will run the app
 def main():
-    st.sidebar.title("Navigation")
-    selection = st.sidebar.radio("Go to", list(pages.keys()))
-
-    # Call the appropriate function based on user selection
-    page = pages[selection]
-    page()
-
-# Run the app
-if __name__ == "__main__":
+    #st.sidebar.title("Navigation")
+    
     st.set_page_config(layout="wide")
+    st.markdown(""" <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """, unsafe_allow_html=True)
+
     # Define a dictionary with the page names and corresponding functions
     pages = {
         "sORF Table": sorf_table,
+        "sORF Transcriptome Atlas": sorf_heatmap,
         "sORF Details": details,
         "sORF Selector": selector
     }
+    
     sorf_excel_table = load_sorf_excel()
     xena_metadata, xena_expression, vtx_id_to_transcripts = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     ave_per_transcript_per_cancer = load_tcga_tumor_vs_nat(xena_metadata, xena_expression)
+    
+    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+
+    with tab1:
+        sorf_table(sorf_excel_table)
+
+    with tab2:
+        sorf_heatmap()
+    
+    with tab3:
+        details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcripts, ave_per_transcript_per_cancer, esmfold, blastp_mouse_hits)
+        
+    with tab4:
+        selector(sorf_excel_table)
+
+# Run the app
+if __name__ == "__main__":
+
     main()

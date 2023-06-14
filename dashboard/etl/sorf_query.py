@@ -81,16 +81,22 @@ def query_overlapping_transcripts(o, session):
     return results
 
 def compute_exact_transcript_matches(o):
-    nt, aa = extract_nucleotide_sequence_broken_psl_starts(current_orf, reference)
+    nt, aa = extract_nucleotide_sequence_broken_psl_starts(o, reference)
     r = find_seq_substring(nt, transcripts)
     return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r]
 
-def run_id_mapping_parallel(orfs):
+def run_id_mapping_parallel(orfs, NCPU = None):
     import multiprocessing as mp
-    NCPU = mp.cpu_count()
-    with mp.Pool(NCPU) as ppool:
-        results = {}
-        for r in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
+    results = {}
+    if NCPU is None:
+        NCPU = mp.cpu_count()
+    if NCPU > 1:
+        with mp.Pool(NCPU) as ppool:            
+            for r in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
+                results[r[0]] = r[1:]
+    else:
+        for o in tqdm(orfs):
+            r = compute_exact_transcript_matches(o)
             results[r[0]] = r[1:]
     return results
                 
