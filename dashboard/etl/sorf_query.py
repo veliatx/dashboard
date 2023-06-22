@@ -28,6 +28,9 @@ pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
+import pathlib
+current_folder = pathlib.Path(__file__).parents[0]
+
 # class wrapper for orf query results to allow multiprocessing to iterate over orf objects
 class OrfData(object):
     def __init__(self, orf_query_object):
@@ -40,6 +43,38 @@ class OrfData(object):
         self.block_sizes = orf_query_object.block_sizes
         self.phases = orf_query_object.phases
         self.assembly_id = orf_query_object.assembly_id
+
+def extract_nucleotide_sequence_veliadb(orf, reference):
+# orf = [i for i in orfs if ';' in i.block_sizes][2]
+    if orf.start == -1 or orf.end == -1:
+        return '', ''
+    chrom = orf.assembly.ucsc_style_name
+    blocks = list(zip(orf.chrom_starts.split(';'), orf.block_sizes.split(';'), orf.phases.split(';')))
+    strand = orf.strand
+    nucl = []
+    for ix, (start, size, phase) in enumerate(blocks):
+        start = int(start) - 1
+        size = int(size)
+        phase = int(phase)
+        if strand == '-':
+            if ix == 0:
+                s = reference[chrom][start : start+(size - 3)]
+            else:
+                s = reference[chrom][start : start+size]
+            s = s.complement.seq[::-1]
+        else:
+            if ix == len(blocks)-1:
+                s = reference[chrom][start : start+(size-3)]
+            else:
+                s = reference[chrom][start : start+size]
+            s = s.seq
+        nucl.append(s)
+    if strand == '-':
+        nucl = nucl[::-1]
+        nucl = ' '.join(nucl)
+    else:
+        nucl = ' '.join(nucl)
+    return nucl, str(Seq(nucl.replace(' ', '')).translate())
 
 def extract_nucleotide_sequence_broken_psl_starts(orf, reference):
 # orf = [i for i in orfs if ';' in i.block_sizes][2]
@@ -77,14 +112,17 @@ from tqdm import tqdm
 import os
 
 # deduped_conservation = pd.read_parquet('deduped_phylocsf_length_filtered.parq')
-transcripts = pyfaidx.Fasta('./gencode.v42.transcripts.fa')
+transcripts = pyfaidx.Fasta(os.path.join(current_folder, './gencode.v42.transcripts.fa'))
 
 def find_seq_substring(query, target_dict):
-    return [k for k, s in target_dict.items() if query.lower() in s[:].seq.lower()]
+    if query == '':
+        return []
+    else:
+        return [k for k, s in target_dict.items() if query.lower() in s[:].seq.lower()]
 
-if not os.path.exists('reference.fa'):
+if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
     with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
-        with open('reference.fa', 'w') as f:
+        with os.path.join(current_folder, 'reference.fa') as f:
             for line in tqdm(fhandle.readlines()):
                 f.write(line)
 def query_overlapping_transcripts(o, session):
@@ -95,19 +133,19 @@ def query_overlapping_transcripts(o, session):
     return results
 
 def compute_exact_transcript_matches(o):
-    nt, aa = extract_nucleotide_sequence_broken_psl_starts(o, reference)
-    r = find_seq_substring(nt, transcripts)
-    return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r]
+    nt, aa = extract_nucleotide_sequence_veliadb(o, reference)
+    r_internal = find_seq_substring(nt, transcripts)
+    return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r_internal]
 
-def run_id_mapping_parallel(orfs, NCPU = None):
+def run_id_mapping_parallel(orfs, NCPU = 1):
     import multiprocessing as mp
     results = {}
     if NCPU is None:
         NCPU = mp.cpu_count()
     if NCPU > 1:
         with mp.Pool(NCPU) as ppool:            
-            for r in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
-                results[r[0]] = r[1:]
+            for r0 in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
+                results[r0[0]] = r0[1:]
     else:
         for o in tqdm(orfs):
             r = compute_exact_transcript_matches(o)
@@ -128,7 +166,7 @@ def load_jsonlines_table(path_to_file, index_col = None):
     return df
                 
 GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
-reference = pyfaidx.Fasta('reference.fa')
+reference = pyfaidx.Fasta(os.path.join(current_folder, 'reference.fa'))
 
 # with jsonlines.open('sorf_table.jsonlines', mode = 'w') as fh:
 #     for current_orf in tqdm(orfs):

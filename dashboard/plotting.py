@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 
-def plot_structure_plddt(plddt):
-    fig, ax = plt.subplots(figsize=(4, 3))
+def plot_structure_plddt(plddt, ax):
     fs=8
     n_aa = len(plddt)
     ax.plot(range(n_aa), plddt)
@@ -14,4 +13,4 @@ def plot_structure_plddt(plddt):
     ax.set_ylim([0, 100])
     ax.hlines(50, 0, n_aa, linestyle='--', color='r', alpha=0.5, label='Low Confidence')
     ax.hlines(90, 0, n_aa, linestyle='--', color='g', alpha=0.5, label='High Confidence')
-    return fig, ax
+    return ax

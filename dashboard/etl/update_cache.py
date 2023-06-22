@@ -26,7 +26,7 @@ if __name__ == '__main__':
     if len(missing_orfs) > 0:
         print('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
 
-    transcript_matching_results = run_id_mapping_parallel(orfs, NCPU = NCPU) # implemented for multithreading but had issues with db access in multiprocessing
+    transcript_matching_results = run_id_mapping_parallel(orfs, NCPU = 1) # implemented for multithreading but had issues with db access in multiprocessing
 
     # Loop over orfs, and populate sorf_table file with attributes of interest
     transcripts_to_map = []
@@ -70,6 +70,9 @@ if __name__ == '__main__':
     normal_vs_gtex_expression = pd.DataFrame(rows, columns = ['Transcript', 'TCGA', 'GTEx', 'Description', 'Normal', 'Cancer'])
     normal_vs_gtex_expression.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
     xena.to_parquet(os.path.join(OUTPUT_DIR, 'xena.parq'))
+    de_genes = read_tcga_de_from_s3('velia-analyses-dev',
+                     'VAP_20230329_tcga_differential_expression', output_dir = OUTPUT_DIR)
+    
     # tissue_pairs.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
     
 

@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 from streamlit_plotly_events import plotly_events
 import plotly.express as px
+from plotly import graph_objects as go
 import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
@@ -18,9 +19,16 @@ from scipy.stats import ranksums
 from statsmodels.stats.multitest import multipletests
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
-
+from etl.sorf_query import load_jsonlines_table
+import os
+import altair as alt
+from collections import defaultdict
+from tqdm import tqdm
+import streamlit.components.v1 as components
 
 from plotting import plot_structure_plddt
+CACHE_DIR = '../cache'
+TPM_DESEQ2_FACTOR = 80
 
 # Load data
 @st.cache_data()
@@ -28,8 +36,34 @@ def load_sorf_excel():
     """
     """
     sorf_excel_table = pd.read_excel('../data/interim_phase1to6_secreted_hits_20230330.xlsx')
+    sorf_excel_table = sorf_excel_table[~sorf_excel_table['vtx_id'].str.contains('\|')]
     return sorf_excel_table
 
+@st.cache_data()
+def load_kibby_results(sorf_excel):
+    kibby = pd.read_csv('../data/phase1to6_kibby.csv', index_col=0)
+    kibby['conservation'] = kibby.conservation.apply(lambda x: list(map(float, x.strip().split(' '))))
+    kibby = kibby.loc[sorf_excel['primary_id']]
+    kibby.index = sorf_excel['vtx_id']
+    return kibby
+
+@st.cache_data()
+def load_de_results(transcripts):
+    cache_filez = os.listdir(CACHE_DIR)
+    de_tables_dict = {}
+    for f in cache_filez:
+        if f.endswith('_de.parq') and not (f=='expression_de.parq'):
+            df = pd.read_parquet(os.path.join(CACHE_DIR, f))
+            df = df.loc[df.index.intersection(transcripts)]
+            de_tables_dict[f.split('_')[0]] = df
+    cancer_dataframe_per_transcript_dict = defaultdict(dict)
+    for c, df in tqdm(de_tables_dict.items()):
+        for row in df.itertuples():
+            cancer_dataframe_per_transcript_dict[row[0]][c] = {'Cancer Average': row._7, 'GTEx Average': row._8, 
+                                                               'log2FC': row.log2FoldChange, 'padj': row.padj}
+    for t, d in cancer_dataframe_per_transcript_dict.items():
+        cancer_dataframe_per_transcript_dict[t] = pd.DataFrame(d).T
+    return cancer_dataframe_per_transcript_dict
 
 @st.cache_data()
 def load_esmfold():
@@ -44,41 +78,44 @@ def load_esmfold():
 
 @st.cache_data()
 def load_xena_tcga_gtex_target():
-    xena_metadata = pd.read_table('../data/TcgaTargetGTEX_phenotype.txt', encoding='latin-1', index_col=0)
-    xena_expression = pd.read_feather('../data/xena_ucsc_phase1to6.feather')
-    xena_expression.index = xena_expression.pop('index')
-    xena_metadata = xena_metadata.loc[xena_expression.index]
-    vtx_id_to_transcripts = json.load(open('../data/vtx_to_ensembl_ids.json', 'r'))
-    return xena_metadata, xena_expression, vtx_id_to_transcripts
+    # Expression is saved as TPM + 0.001 (NOT LOGGED)
+    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
+    xena_metadata = xena_expression[xena_expression.columns[:6]]
+    xena_expression = xena_expression[xena_expression.columns[6:]]
+    vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
+    # Map VTX to transcript ids - some 
+    transcript_to_vtx_id = {}
+    for ix, row in vtx_id_to_transcripts.iterrows():
+        for val in row['transcripts_exact']:
+            transcript_to_vtx_id[val] = ix
+    # Sum transcripts for VTX id
+    xena_vtx_sums = xena_expression.T.copy()
+    xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
+    xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
+    xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
+    de_tables_dict = load_de_results(list(transcript_to_vtx_id.keys()))
+    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict
 
 @st.cache_data()
 def load_xena_heatmap():
+    xena_metadata_df, xena_exp_df, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
     
-    xena_metadata_df, xena_exp_df, vtx_id_to_transcripts = load_xena_tcga_gtex_target()
-    
-    transcript_to_vtx_id = {}
 
-    for k, vals in vtx_id_to_transcripts.items():
-        for val in vals:
-            transcript_to_vtx_id[val] = k
     
-    xena_exp_df = xena_exp_df.T
-    xena_exp_df['vtx_id'] = xena_exp_df.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
-    xena_exp_df = xena_exp_df.groupby('vtx_id').aggregate(np.mean).T
-    xena_exp_df = xena_exp_df.merge(xena_metadata_df, left_index=True, right_index=True)
-    transcript_col_names = [i for i in xena_exp_df.columns if i not in xena_metadata_df.columns]
-    xena_exp_df = xena_exp_df[transcript_col_names].groupby(xena_exp_df['_primary_site']).aggregate(np.mean)
+    xena_vtx_sums = xena_vtx_sums.merge(xena_metadata_df, left_index=True, right_index=True)
+    transcript_col_names = [i for i in xena_vtx_sums.columns if i not in xena_metadata_df.columns]
+    xena_vtx_sums = xena_vtx_sums[transcript_col_names].groupby(xena_vtx_sums['_primary_site']).aggregate(np.mean)
 
     # compute the clusters
-    row_clusters = linkage(xena_exp_df.T.values, method='complete', metric='euclidean')
-    col_clusters = linkage(xena_exp_df.values, method='complete', metric='euclidean')
+    row_clusters = linkage(xena_vtx_sums.T.values, method='complete', metric='euclidean')
+    col_clusters = linkage(xena_vtx_sums.values, method='complete', metric='euclidean')
 
     # compute the leaves order
     row_leaves = leaves_list(row_clusters)
     col_leaves = leaves_list(col_clusters)
 
     # reorder the DataFrame according to the clusters
-    plot_df = xena_exp_df.T.iloc[row_leaves, col_leaves]
+    plot_df = xena_vtx_sums.T.iloc[row_leaves, col_leaves]
 
     col_map = {x: i for i,x in enumerate(plot_df.columns)}
     row_map = {x: i for i,x in enumerate(plot_df.index)}
@@ -114,51 +151,6 @@ def load_mouse_blastp_results():
                 alignment['alignment'] = align_str
                 hits_per_query[q].append(alignment)
     return hits_per_query
-
-
-@st.cache_data()
-def load_tcga_tumor_vs_nat(xena_metadata, xena_expression):
-    cancers = pd.read_csv('../data/cancer_types.txt', header=None, names = ['Disease', 'Code'])
-    cancers.index = [i.lower() for i in cancers['Disease']]
-    tcga_paired_normal = {}
-    tcga_paired_normal_index = []
-    pairs = pd.read_excel('../data/tissue_pairs.xlsx')
-    for ix, row in pairs.iterrows():
-        if isinstance(row['NAT (Solid Tissue Normal)'], str):
-            tcga_groups = xena_metadata[(xena_metadata['_primary_site'] == row['Tissue (Disease)']) & (xena_metadata['_study'] == 'TCGA')].copy()
-            for cancer in tcga_groups['primary disease or tissue'].unique():
-                primary_tumor_samples = tcga_groups[(tcga_groups['primary disease or tissue']==cancer) & 
-                                                   (tcga_groups['_sample_type']=='Primary Tumor')].index
-                normal_adjacent_samples = tcga_groups[(tcga_groups['primary disease or tissue']==cancer) & 
-                                                   (tcga_groups['_sample_type']=='Solid Tissue Normal')].index
-                if len(primary_tumor_samples)>=8 and (len(normal_adjacent_samples)>=8):
-                    tcga_paired_normal[cancer] = {'Tumor': primary_tumor_samples, 'NAT': normal_adjacent_samples}
-                    tcga_paired_normal_index += list(primary_tumor_samples)+list(normal_adjacent_samples)
-        else:
-            continue
-    tcga_nat_table = xena_expression.loc[tcga_paired_normal_index].copy()
-    tcga_nat_table.insert(0, 'Cancer', '')
-    tcga_nat_table.insert(1, 'Condition', '')
-    for c, s in tcga_paired_normal.items():
-        tcga_nat_table.loc[s['Tumor'], 'Cancer'] = c
-        tcga_nat_table.loc[s['NAT'], 'Cancer'] = c
-        tcga_nat_table.loc[s['Tumor'], 'Condition'] = 'Cancer'
-        tcga_nat_table.loc[s['NAT'], 'Condition'] = 'Normal Adjacent'
-    ave_per_transcript_per_cancer = tcga_nat_table.groupby(['Cancer', 'Condition']).median()
-    ave_per_transcript_per_cancer = ave_per_transcript_per_cancer.reset_index()
-    stats_per_tumor = {}
-    for c, s in tcga_paired_normal.items():
-        tumor = tcga_nat_table.loc[s['Tumor'], tcga_nat_table.columns[2:]]
-        normal = tcga_nat_table.loc[s['NAT'], tcga_nat_table.columns[2:]]
-        logfcs = tumor.mean(axis=0) - normal.mean(axis=0)
-        test_statistic, p_value = ranksums(tumor, normal, alternative='two-sided')
-
-        stats = pd.DataFrame({'ranksum': test_statistic, 'p_value': p_value, 'logFC': logfcs.values, 
-                 'FDR': multipletests(p_value, method='fdr_bh')[1]}, index=tumor.columns)
-        stats_per_tumor[c] = stats.copy()
-    logfcs = tumor.mean(axis=0) - normal.mean(axis=0)
-    return ave_per_transcript_per_cancer
-
 
 def sorf_table(sorf_excel_table):
     st.title("sORF Library")
@@ -236,9 +228,30 @@ def ucsc_link(chrom, start, end):
     ucsc_link = f"{base_link}{genome}&position={position}"
     return ucsc_link
 
+def ccle_viewer(ccle_expression, sorf_table):
+    st.session_state['ccle_vtx_id'] = st.selectbox("Select ORF", options = sorf_table.index)
+    vtx_id = st.session_state['ccle_vtx_id']
+    md_columns = exp.columns[:7]
+    subset = ccle_expression[list(md_columns)+sorf_table.loc[vtx_id, 'transcripts_exact']].copy()
+    subset['Sum Exact Match'] = ccle_expression[sorf_table.loc[vtx_id, 'transcripts_exact']].sum(axis=1)
+    subset['Sum Overlapping Match'] = ccle_expression[[i for i in sorf_table.loc[vtx_id, 'transcripts_overlapping'] if i in ccle_expression.columns]].sum(axis=1)
+    gd = GridOptionsBuilder.from_dataframe(sorf_excel_table)
+    gd.configure_pagination(enabled=True)
+    gd.configure_selection(use_checkbox=True)
+    gridOptions = gd.build()
+    ag_grid = AgGrid(subset, gridOptions = gridOptions,
+                     # fit_columns_on_grid_load = True,
+                     height=500,
+                     width = "200%",
+                     theme = "streamlit",
+                     update_mode = GridUpdateMode.GRID_CHANGED,
+                     reload_data = False,
+                     editable = False)
 
 # Function per page
-def details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcripts, ave_per_transcript_per_cancer, esmfold, blastp_mouse_hits):
+def details(sorf_excel_table, xena_expression, xena_metadata,
+            vtx_id_to_transcripts, cancer_dataframe_per_transcript_dict,
+            esmfold, blastp_mouse_hits, kibby):
     # Header text
     st.title('sORF Details')
     # Select a single sORF to plot and convert ID to vtx_id
@@ -248,32 +261,73 @@ def details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcri
         vtx_id = st.session_state['detail_id_seleceted']
     else:
         vtx_id = sorf_excel_table[sorf_excel_table[st.session_state['id_type_selected']] == st.session_state['detail_id_seleceted']].iloc[0]['vtx_id']
+    if '|' in vtx_id:
+        vtx_id = vtx_id.split('|')[0]
     selected_row = sorf_excel_table[sorf_excel_table[st.session_state['id_type_selected']] == st.session_state['detail_id_seleceted']].iloc[0]
     link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
     st.write(f"UCSC Browser [link]({link})")
-
-    # Plot transcript expression levels
-    selected_transcripts = vtx_id_to_transcripts[vtx_id]
-    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-    if len(xena_overlap)>1:
-        selected_expression = xena_expression[xena_overlap]
-        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-        cmap_fig = sns.clustermap(selected_expression.groupby(groups).median(),
-                                  cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-        st.pyplot(cmap_fig)
-    elif len(xena_overlap) == 1:
-        st.write('Only 1 transcript')
-    else:
-        st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
-    st.write(xena_overlap)
-    # Barplot Tumor vs NAT
-    fig, ax = plt.subplots(figsize=(9, 3))
-    exp_bplot = sns.barplot(data = ave_per_transcript_per_cancer, x='Cancer', ax = ax,
-            y=ave_per_transcript_per_cancer[xena_overlap].apply(lambda x: np.log2(np.sum(np.exp2(x)-0.001)+0.001), axis=1),
-            hue='Condition', alpha=0.75, palette=["r", "k"])
-    exp_bplot.set_xticks(exp_bplot.get_xticks(), exp_bplot.get_xticklabels(), rotation=90)
-    exp_bplot.set_ylabel('Log2 (TPM+0.001)')
-    st.pyplot(fig)
+    col1, col2 = st.columns(2)
+    with col1:
+        # Plot transcript expression levels
+        selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+        selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+        selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
+        xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+        set2 = sns.color_palette('Set2', n_colors=2)
+        if len(xena_overlap)>1:
+            col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+            selected_expression = xena_expression[xena_overlap]
+            groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+            cmap_fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
+                                      cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+            st.pyplot(cmap_fig)
+        elif len(xena_overlap) == 1:
+            st.write('Only 1 transcript')
+            col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+            selected_expression = xena_expression[list(xena_overlap)]
+            # selected_expression['Null'] = -1
+            # col_colors.append(set2[1])
+            print(selected_expression.shape, col_colors)
+            groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+            fig, ax = plt.subplots()
+            sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
+                                      cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+            st.write(fig)
+        else:
+            st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+    # st.write(xena_overlap)
+    # # Barplot Tumor vs NAT
+    # fig, ax = plt.subplots(figsize=(9, 3))
+    with col2:
+        tids = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+        sum_expression_cancer = pd.DataFrame(pd.DataFrame([cancer_dataframe_per_transcript_dict[tid]['Cancer Average'] for tid in tids if len(cancer_dataframe_per_transcript_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
+        sum_expression_cancer['condition'] = 'Cancer'
+        sum_expression_normal = pd.DataFrame(pd.DataFrame([cancer_dataframe_per_transcript_dict[tid]['GTEx Average'] for tid in  tids if len(cancer_dataframe_per_transcript_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
+        sum_expression_normal['condition'] = 'GTEx'
+        de = pd.DataFrame([cancer_dataframe_per_transcript_dict[tid]['padj']<0.001 for tid in tids if len(cancer_dataframe_per_transcript_dict[tid])>0]).sum(axis=0)
+        result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
+        result['TCGA'] = result.index
+        result['# DE Transcripts'] = [de.loc[i] for i in result.index]
+    
+        # Define the bar plot using Altair
+        fig = px.bar(result, x='TCGA', y='Sum', color='condition', barmode='group')
+        fig.add_trace(go.Scatter(
+            x=result['TCGA'],
+            y=result['Sum'],
+            mode="text",
+            name="# DE Transcripts",
+            text=result['# DE Transcripts'],
+            textposition="top center",
+            showlegend=False
+        ))
+        st.plotly_chart(fig)
+    # exp_bplot = sns.barplot(data = ave_per_transcript_per_cancer, x='Cancer', ax = ax,
+            # y=ave_per_transcript_per_cancer[xena_overlap].apply(lambda x: np.log2(np.sum(np.exp2(x)-0.001)+0.001), axis=1),
+            # hue='Condition', alpha=0.75, palette=["r", "k"])
+    # exp_bplot.set_xticks(exp_bplot.get_xticks(), exp_bplot.get_xticklabels(), rotation=90)
+    # exp_bplot.set_ylabel('Log2 (TPM+0.001)')
+    # st.pyplot(fig)
+    col1, col2 = st.columns(2)
     # Load esmfold data for selected sORF
     sorf_aa_seq = sorf_excel_table[sorf_excel_table['vtx_id']==vtx_id]['aa'].iloc[0]
     structure = esmfold[sorf_aa_seq]['pdb']
@@ -284,10 +338,16 @@ def details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcri
     view.addModel(structure, 'pdb')
     view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
     view.zoomTo()
-    showmol(view, height=500, width=1200)
+    with col2:
+        components.html(view._make_html(), height = 500,width=500)
+    # showmol(view, height=500, width=1200)
+    
     # Plot plDDT
-    fig, ax = plot_structure_plddt(plddt)
-    st.pyplot(fig)
+    fig, axes = plt.subplots(3, 1)
+    ax_plddt = plot_structure_plddt(plddt, axes[0])
+    k = kibby.loc[vtx_id]['conservation']
+    ax_kibby = axes[1].plot(k)
+    col1.pyplot(fig)
     # Blastp Mouse
     if st.session_state['id_type_selected'] == 'primary_id':
         primary_id = st.session_state['detail_id_seleceted']
@@ -328,16 +388,18 @@ def main():
         "sORF Table": sorf_table,
         "sORF Transcriptome Atlas": sorf_heatmap,
         "sORF Details": details,
-        "sORF Selector": selector
+        "sORF Selector": selector,
+        "CCLE Expression": ccle_viewer
     }
     
     sorf_excel_table = load_sorf_excel()
-    xena_metadata, xena_expression, vtx_id_to_transcripts = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
-    ave_per_transcript_per_cancer = load_tcga_tumor_vs_nat(xena_metadata, xena_expression)
+    kibby = load_kibby_results(sorf_excel_table)
+    # sorf_json_table = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'))
     
-    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(list(pages.keys()))
 
     with tab1:
         sorf_table(sorf_excel_table)
@@ -346,10 +408,13 @@ def main():
         sorf_heatmap()
     
     with tab3:
-        details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcripts, ave_per_transcript_per_cancer, esmfold, blastp_mouse_hits)
+        details(sorf_excel_table, xena_expression, xena_metadata, vtx_id_to_transcripts, de_tables_dict, esmfold, blastp_mouse_hits, kibby)
         
     with tab4:
         selector(sorf_excel_table)
+
+    # with tab5:
+        # ccle_viewer()
 
 # Run the app
 if __name__ == "__main__":

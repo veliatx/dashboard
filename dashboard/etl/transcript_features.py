@@ -3,6 +3,11 @@ import smart_open
 import pandas as pd
 import numpy as np
 
+# def load_s3_transcript_DE_stats
+
+def load_CCLE_data_from_s3():
+    exp = pd.read_csv('s3://velia-analyses-dev/VAP_20230324_pull_ccle/data/OmicsExpressionProteinCodingGenesTPMLogp1_22Q4.csv')
+
 def load_xena_transcripts_with_metadata_from_s3(transcripts_to_load = None):
     """
     Wrapper to load data from s3.
@@ -32,6 +37,30 @@ def load_xena_transcripts_with_metadata_from_s3(transcripts_to_load = None):
 
     xena = np.exp2(xena)
     return metadata.merge(xena, left_index=True, right_index=True), metadata, tissue_pairs
+
+def read_tcga_de_from_s3(bucket, object_prefix, output_dir = None,
+                         tcga_cancer_codes = None):
+    session = boto3.Session()
+    s3 = session.resource('s3')
+    my_bucket = s3.Bucket(bucket)
+    
+    cancer_de_results = {}
+    for f in my_bucket.objects.filter(Prefix=object_prefix):
+        fname = f.key
+        if fname.endswith('.csv'):
+            cancer_de_results[fname.split('/')[-1].split('_')[0]] = fname
+    if tcga_cancer_codes is None:
+        tcga_cancer_codes = cancer_de_results.keys()
+    tables = {}
+    for c in tqdm(tcga_cancer_codes):
+        if c in cancer_de_results.keys():
+            table = pd.read_csv(f"s3://{bucket}/{cancer_de_results[c]}", index_col=0)
+            if not output_dir is None:
+                table.to_parquet(f"{output_dir}/{c}_de.parq")
+            tables[c] = table    
+        else:
+            print(f"{c} not found in results")
+    return tables
 
 def create_comparison_groups_xena_tcga_vs_normal(xena, tissue_pairs):
     groups = {}
