@@ -32,8 +32,8 @@ dependencies:
     - pyfaidx
     - streamlit-echarts
     - git-remote-codecommit
-    - git+codecommit::us-west-2://veliadb
-    - git+codecommit::us-west-2://conservation
+    #- git+codecommit::us-west-2://veliadb
+    #- git+codecommit::us-west-2://conservation
     
 
     
