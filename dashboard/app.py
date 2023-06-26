@@ -329,8 +329,6 @@ def sorf_table(sorf_excel_df):
         stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
 
 
-
-
 def sorf_heatmap():
     st.title("sORF Transcriptome Atlas")
     st.write("Table contains secreted sORFs.")
@@ -541,7 +539,8 @@ def selector(sorf_excel_df):
 def genome_browser():
     """
     """
-    pass
+    components.iframe("http://10.65.23.159:8080/velia_collections.html", height=1200, scrolling=True)
+
 
 
 def main():
@@ -574,7 +573,10 @@ def main():
 
     with tab2:
         sorf_heatmap()
-    
+
+    with tab3:
+        genome_browser()
+
     #with tab3:
     #    details(sorf_excel_df, xena_expression, xena_metadata, vtx_id_to_transcripts, de_tables_dict, esmfold, blastp_mouse_hits, kibby)
         
@@ -583,6 +585,7 @@ def main():
 
     # with tab5:
         # ccle_viewer()
+
 
 # Run the app
 if __name__ == "__main__":
