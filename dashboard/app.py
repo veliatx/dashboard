@@ -26,7 +26,7 @@ from collections import defaultdict
 from tqdm import tqdm
 import streamlit.components.v1 as components
 
-from plotting import plot_structure_plddt
+from plotting import plot_structure_plddt, expression_de_to_echarts_data, bar_plot_expression_groups
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
@@ -265,7 +265,9 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
         vtx_id = vtx_id.split('|')[0]
     selected_row = sorf_excel_table[sorf_excel_table[st.session_state['id_type_selected']] == st.session_state['detail_id_seleceted']].iloc[0]
     link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
+    
     st.write(f"UCSC Browser [link]({link})")
+    # Transcriptional Data
     col1, col2 = st.columns(2)
     with col1:
         # Plot transcript expression levels
@@ -285,8 +287,6 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
             st.write('Only 1 transcript')
             col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
             selected_expression = xena_expression[list(xena_overlap)]
-            # selected_expression['Null'] = -1
-            # col_colors.append(set2[1])
             print(selected_expression.shape, col_colors)
             groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
             fig, ax = plt.subplots()
@@ -295,9 +295,7 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
             st.write(fig)
         else:
             st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
-    # st.write(xena_overlap)
-    # # Barplot Tumor vs NAT
-    # fig, ax = plt.subplots(figsize=(9, 3))
+    # # Barplot Tumor vs GTEx
     with col2:
         tids = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
         sum_expression_cancer = pd.DataFrame(pd.DataFrame([cancer_dataframe_per_transcript_dict[tid]['Cancer Average'] for tid in tids if len(cancer_dataframe_per_transcript_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
@@ -309,7 +307,7 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
         result['TCGA'] = result.index
         result['# DE Transcripts'] = [de.loc[i] for i in result.index]
     
-        # Define the bar plot using Altair
+        # Define the bar plot using Plotly
         fig = px.bar(result, x='TCGA', y='Sum', color='condition', barmode='group')
         fig.add_trace(go.Scatter(
             x=result['TCGA'],
@@ -321,33 +319,30 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
             showlegend=False
         ))
         st.plotly_chart(fig)
-    # exp_bplot = sns.barplot(data = ave_per_transcript_per_cancer, x='Cancer', ax = ax,
-            # y=ave_per_transcript_per_cancer[xena_overlap].apply(lambda x: np.log2(np.sum(np.exp2(x)-0.001)+0.001), axis=1),
-            # hue='Condition', alpha=0.75, palette=["r", "k"])
-    # exp_bplot.set_xticks(exp_bplot.get_xticks(), exp_bplot.get_xticklabels(), rotation=90)
-    # exp_bplot.set_ylabel('Log2 (TPM+0.001)')
-    # st.pyplot(fig)
+        bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'])
+    # Protein Info
     col1, col2 = st.columns(2)
-    # Load esmfold data for selected sORF
-    sorf_aa_seq = sorf_excel_table[sorf_excel_table['vtx_id']==vtx_id]['aa'].iloc[0]
-    structure = esmfold[sorf_aa_seq]['pdb']
-    plddt = esmfold[sorf_aa_seq]['plddt']
-    # Plot esmfold structure
-    st.title('sORF ESMfold')
-    view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-    view.addModel(structure, 'pdb')
-    view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
-    view.zoomTo()
     with col2:
-        components.html(view._make_html(), height = 500,width=500)
-    # showmol(view, height=500, width=1200)
-    
-    # Plot plDDT
-    fig, axes = plt.subplots(3, 1)
-    ax_plddt = plot_structure_plddt(plddt, axes[0])
-    k = kibby.loc[vtx_id]['conservation']
-    ax_kibby = axes[1].plot(k)
-    col1.pyplot(fig)
+        # Load esmfold data for selected sORF
+        sorf_aa_seq = sorf_excel_table[sorf_excel_table['vtx_id']==vtx_id]['aa'].iloc[0]
+        structure = esmfold[sorf_aa_seq]['pdb']
+        plddt = esmfold[sorf_aa_seq]['plddt']
+        # Plot esmfold structure
+        view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
+        view.addModel(structure, 'pdb')
+        view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
+        view.zoomTo()
+        components.html(view._make_html(), height = 350,width=400)
+        # Plot signalP/TM algo results below ESMFold Window
+    # Plot amino acid level Values
+    # plDDT, phylocsf, kibby, blast conservation
+    with col1:    
+        # Plot plDDT
+        fig, axes = plt.subplots(3, 1)
+        ax_plddt = plot_structure_plddt(plddt, axes[0])
+        k = kibby.loc[vtx_id]['conservation']
+        ax_kibby = axes[1].plot(k)
+        col1.pyplot(fig)
     # Blastp Mouse
     if st.session_state['id_type_selected'] == 'primary_id':
         primary_id = st.session_state['detail_id_seleceted']
@@ -362,7 +357,6 @@ def details(sorf_excel_table, xena_expression, xena_metadata,
             hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
             long_text+=hit_text
             long_text+= h['alignment'] + '  \n  \n'
-
     stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
                   
     
@@ -414,6 +408,7 @@ def main():
         selector(sorf_excel_table)
 
     # with tab5:
+        
         # ccle_viewer()
 
 # Run the app
