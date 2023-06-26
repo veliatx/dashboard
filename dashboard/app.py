@@ -42,6 +42,7 @@ def load_sorf_excel():
     
     # removes any sORFs with multiple VTX IDs (e.g. multi-mappers to the genome)
     sorf_excel_df = sorf_excel_df[~sorf_excel_df['vtx_id'].str.contains('\|')]
+    sorf_excel_df['index_copy'] = sorf_excel_df.index
 
     sorf_excel_df['show_details'] = False
 
@@ -185,6 +186,7 @@ def convert_df(df):
 def sorf_table(sorf_excel_df):
     st.title('sORF Library')
     st.write('Table contains secreted sORFs.')
+
     df = filter_dataframe(sorf_excel_df)
 
     if 'data_editor_prev' in st.session_state.keys():
@@ -195,9 +197,13 @@ def sorf_table(sorf_excel_df):
 
         if len(update_rows) > 0:
             row_idx = list(update_rows.keys())[0]
+            
             df['show_details'] = False
-            df.at[row_idx, 'show_details'] = True
-            st.session_state['curr_vtx_id'] = str(df.loc[row_idx]['vtx_id'])
+            row_idx_name = df.iloc[row_idx].name
+            df.at[row_idx_name, 'show_details'] = True
+            st.session_state['curr_vtx_id'] = str(df.loc[row_idx_name]['vtx_id'])
+
+    st.write(df.shape)
 
     update_df = st.data_editor(
         df,
