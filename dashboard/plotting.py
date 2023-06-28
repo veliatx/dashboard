@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from streamlit_echarts import st_echarts
 import streamlit as st
+import numpy as np
 
 def plot_structure_plddt(plddt, ax):
     fs=8
@@ -96,3 +97,19 @@ def bar_plot_expression_groups(dataframe, group_name, group_members):
       ]
     }
     st_echarts(option, height="400px")
+
+def features_to_int_arrays(row):
+    char_to_int = {'S': 1, 'C': 0, 'O': 2, 'M': 3, 'I': 0}
+    convert_to_integer_array = lambda x: np.array([char_to_int[i] for i in x])
+    textrow = row.apply(lambda x: [i for i in x]).copy()
+    row = row.apply(convert_to_integer_array)
+    imdf = pd.DataFrame(index = [i for i in row.name])
+    textdf = pd.DataFrame(index = [i for i in row.name])
+    for ix, row in row.items():
+        imdf[ix] = row
+        textdf[ix] = textrow.loc[ix]
+    imdf = imdf.T
+    textdf = textdf.T
+    imdf.loc['aa'] = imdf.columns
+    imdf.columns = np.arange(imdf.shape[1])
+    return imdf, textdf
