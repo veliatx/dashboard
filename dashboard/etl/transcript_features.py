@@ -8,6 +8,7 @@ import numpy as np
 def load_CCLE_data_from_s3():
     exp = pd.read_csv('s3://velia-analyses-dev/VAP_20230324_pull_ccle/data/OmicsExpressionProteinCodingGenesTPMLogp1_22Q4.csv')
 
+
 def load_xena_transcripts_with_metadata_from_s3(transcripts_to_load = None):
     """
     Wrapper to load data from s3.
@@ -38,6 +39,7 @@ def load_xena_transcripts_with_metadata_from_s3(transcripts_to_load = None):
     xena = np.exp2(xena)
     return metadata.merge(xena, left_index=True, right_index=True), metadata, tissue_pairs
 
+
 def read_tcga_de_from_s3(bucket, object_prefix, output_dir = None,
                          tcga_cancer_codes = None):
     session = boto3.Session()
@@ -61,6 +63,7 @@ def read_tcga_de_from_s3(bucket, object_prefix, output_dir = None,
         else:
             print(f"{c} not found in results")
     return tables
+
 
 def create_comparison_groups_xena_tcga_vs_normal(xena, tissue_pairs):
     groups = {}
