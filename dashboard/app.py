@@ -116,7 +116,7 @@ def load_xena_tcga_gtex_target():
 
 @st.cache_data()
 def load_xena_heatmap():
-    xena_metadata_df, _, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target()
+    xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target()
     
     xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
     transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
@@ -150,7 +150,7 @@ def load_xena_heatmap():
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
 
-    return data, col_names, row_names, xena_tau_df
+    return data, col_names, row_names, xena_tau_df, xena_exp_df
 
 
 @st.cache_data()
@@ -298,82 +298,29 @@ def sorf_table(sorf_excel_df):
 def sorf_heatmap(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
-    data, col_names, row_names, xena_tau_df = load_xena_heatmap()
+    data, col_names, row_names, xena_tau_df, xena_exp_df = load_xena_heatmap()
 
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col2:
             values = st.slider(
-                'Select Tissue Specificity',
-                0.0, 1.0, (.8, 1.0))
+                'Select Tissue Specificity Tau',
+                
+                0.0, 1.0, (.8, 1.0),
+                help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
         
-        tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
-        row_df = pd.DataFrame(row_names)
-
-        specific_df = row_df[row_df.apply(lambda x: True if x[0] in tissue_specific_vtx_ids else False, axis=1)]
-        specific_df.reset_index(inplace=True)
-        subset_data = []
-
-        for d in data:
-            if d[0] in specific_df['index'].values:
-                new_idx = int(specific_df[specific_df['index'] == d[0]].index[0])
-                subset_data.append((new_idx, d[1], d[2]))
+        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values)
         
-        row_names = list(specific_df[0])
-
-        option = {
-            "tooltip": {},
-            "xAxis": {
-                "type": "category", 
-                "data": row_names, 
-                "axisLabel": {
-                    "fontSize": 10,
-                    "rotate": -90,
-                    "width": 100,
-                }
-                },
-            "yAxis": {
-                "type": "category", 
-                "data": col_names, 
-                },
-            "visualMap": {
-                "min": 0,
-                "max": 12,
-                "calculable": True,
-                "realtime": False,
-                "orient": "horizontal",
-                "left": "center",
-                "top": "0%",
-            },
-            "series": [
-                {
-                    "name": "Log2(TPM+1)",
-                    "type": "heatmap",
-                    "data": subset_data,
-                    #"label": {"show": True},
-                    "emphasis": {
-                        "itemStyle": {
-                        "borderColor": '#333',
-                            "borderWidth": 1
-                        }
-                    },
-                    "progressive": 1000,
-                    "animation": False,
-                }
-            ],
-        }
-        
-        events = {
-            "click": "function(params) { console.log(params.name); return params.name }",
-            "dblclick":"function(params) { return [params.type, params.name, params.value] }"
-        }
-        display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'isoform_of']
+        display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
         if value:
             st.header('Selected sORF')
             st.dataframe(sorf_excel_df[sorf_excel_df['vtx_id'] == value][display_cols])
+            
+            boxplot = plotting.expression_vtx_boxplot(value, xena_exp_df)
+            st_echarts(boxplot, height="500px")
         
-        df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
+        df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
         st.header('Tissue specific sORFs')
         st.dataframe(df)
 

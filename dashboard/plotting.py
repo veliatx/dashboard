@@ -170,3 +170,231 @@ def expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict):
     ))
 
     return fig, result
+
+
+def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values):
+    """
+    """
+    tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
+    row_df = pd.DataFrame(row_names)
+
+    specific_df = row_df[row_df.apply(lambda x: True if x[0] in tissue_specific_vtx_ids else False, axis=1)]
+    specific_df.reset_index(inplace=True)
+    subset_data = []
+
+    for d in data:
+        if d[0] in specific_df['index'].values:
+            new_idx = int(specific_df[specific_df['index'] == d[0]].index[0])
+            subset_data.append((new_idx, d[1], d[2]))
+    
+    row_names = list(specific_df[0])
+
+    option = {
+        "tooltip": {},
+        "xAxis": {
+            "type": "category", 
+            "data": row_names, 
+            "axisLabel": {
+                "fontSize": 10,
+                "rotate": -90,
+                "width": 100,
+            }
+            },
+        "yAxis": {
+            "type": "category", 
+            "data": col_names, 
+            },
+        "visualMap": {
+            "min": 0,
+            "max": 12,
+            "calculable": True,
+            "realtime": False,
+            "orient": 'vertical',
+            "left": '95%',
+            "top": 'center'
+        },
+        "series": [
+            {
+                "name": "Log2(TPM+1)",
+                "type": "heatmap",
+                "data": subset_data,
+                #"label": {"show": True},
+                "emphasis": {
+                    "itemStyle": {
+                    "borderColor": '#333',
+                        "borderWidth": 1
+                    }
+                },
+                "progressive": 1000,
+                "animation": False,
+            }
+        ],
+    }
+    
+    events = {
+        "click": "function(params) { console.log(params.name); return params.name }",
+        "dblclick":"function(params) { return [params.type, params.name, params.value] }"
+    }
+
+    return option, events, tissue_specific_vtx_ids
+
+
+def expression_vtx_boxplot(vtx_id, expression_df):
+    """
+    """
+    st.write(expression_df.head())
+    option = {
+      "title": [
+          {"text": f"GTEx Expression {vtx_id} ", "left": "center"},
+          {
+              "text": "",
+              "borderColor": "#999",
+              "borderWidth": 1,
+              "textStyle": {"fontWeight": "normal", "fontSize": 14, "lineHeight": 20},
+              "left": "10%",
+              "top": "90%",
+          },
+      ],
+      "dataset": [
+          {
+              "source": [
+                  [
+                      850,
+                      740,
+                      900,
+                      1070,
+                      930,
+                      850,
+                      950,
+                      980,
+                      980,
+                      880,
+                      1000,
+                      980,
+                      930,
+                      650,
+                      760,
+                      810,
+                      1000,
+                      1000,
+                      960,
+                      960,
+                  ],
+                  [
+                      960,
+                      940,
+                      960,
+                      940,
+                      880,
+                      800,
+                      850,
+                      880,
+                      900,
+                      840,
+                      830,
+                      790,
+                      810,
+                      880,
+                      880,
+                      830,
+                      800,
+                      790,
+                      760,
+                      800,
+                  ],
+                  [
+                      880,
+                      880,
+                      880,
+                      860,
+                      720,
+                      720,
+                      620,
+                      860,
+                      970,
+                      950,
+                      880,
+                      910,
+                      850,
+                      870,
+                      840,
+                      840,
+                      850,
+                      840,
+                      840,
+                      840,
+                  ],
+                  [
+                      890,
+                      810,
+                      810,
+                      820,
+                      800,
+                      770,
+                      760,
+                      740,
+                      750,
+                      760,
+                      910,
+                      920,
+                      890,
+                      860,
+                      880,
+                      720,
+                      840,
+                      850,
+                      850,
+                      780,
+                  ],
+                  [
+                      890,
+                      840,
+                      780,
+                      810,
+                      760,
+                      810,
+                      790,
+                      810,
+                      820,
+                      850,
+                      870,
+                      870,
+                      810,
+                      740,
+                      810,
+                      940,
+                      950,
+                      800,
+                      810,
+                      870,
+                  ],
+              ]
+          },
+          {
+              "transform": {
+                  "type": "boxplot",
+                  "config": {"itemNameFormatter": "expr {value}"},
+              }
+          },
+          {"fromDatasetIndex": 1, "fromTransformResult": 1},
+      ],
+      "tooltip": {"trigger": "item", "axisPointer": {"type": "shadow"}},
+      "grid": {"left": "10%", "right": "10%", "bottom": "15%"},
+      "xAxis": {
+          "type": "category",
+          "boundaryGap": True,
+          "nameGap": 30,
+          "splitArea": {"show": False},
+          "splitLine": {"show": False},
+      },
+      "yAxis": {
+          "type": "value",
+          "name": "TPM",
+          "splitArea": {"show": True},
+      },
+      "series": [
+          {"name": "boxplot", "type": "boxplot", "datasetIndex": 1},
+          {"name": "outlier", "type": "scatter", "datasetIndex": 2},
+      ],
+    }
+    return option
