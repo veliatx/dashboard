@@ -297,7 +297,6 @@ def sorf_table(sorf_excel_df):
 
 def sorf_heatmap(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
-    st.write("Table contains secreted sORFs.")
     
     data, col_names, row_names, xena_tau_df = load_xena_heatmap()
 
@@ -368,7 +367,7 @@ def sorf_heatmap(sorf_excel_df):
             "click": "function(params) { console.log(params.name); return params.name }",
             "dblclick":"function(params) { return [params.type, params.name, params.value] }"
         }
-        display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'isoform_of']
+        display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
         if value:
             st.header('Selected sORF')
@@ -522,8 +521,8 @@ def details(sorf_excel_df, xena_expression, xena_metadata,
     
 def selector(sorf_excel_df):
     st.title("Select sORFs Interactively")
-    st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_excel_df.columns, index=0)
-    st.session_state['y_feature'] = st.selectbox("Select Y Feature", options = sorf_excel_df.columns, index=1)
+    st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_excel_df.columns, index=11)
+    st.session_state['y_feature'] = st.selectbox("Select Y Feature", options = sorf_excel_df.columns, index=12)
     
     fig = px.scatter(sorf_excel_df, x=st.session_state['x_feature'], y=st.session_state['y_feature'])
     selected_points = plotly_events(fig)
