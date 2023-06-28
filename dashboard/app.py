@@ -27,11 +27,14 @@ import altair as alt
 from tqdm import tqdm
 import streamlit.components.v1 as components
 
-from plotting import plot_structure_plddt, expression_de_to_echarts_data, bar_plot_expression_groups
+from plotting import plot_structure_plddt, expression_de_to_echarts_data, bar_plot_expression_groups, features_to_int_arrays
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
-
+@st.cache_data()
+def load_protein_feature_string_representations():
+    df = pd.read_parquet('../data/sequence_features_strings.parq').T
+    return df
 # Load data
 @st.cache_data()
 def load_sorf_excel():
@@ -227,6 +230,7 @@ def sorf_table(sorf_excel_df):
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
+    protein_features_df = load_protein_feature_string_representations()
 
     if 'curr_vtx_id' in st.session_state.keys():
 
@@ -273,13 +277,20 @@ def sorf_table(sorf_excel_df):
         with col2:
             components.html(view._make_html(), height = 500,width=500)
         # showmol(view, height=500, width=1200)
-        
         # Plot plDDT
-        fig, axes = plt.subplots(3, 1)
+        fig, axes = plt.subplots(2, 1, sharex=True)
         ax_plddt = plot_structure_plddt(plddt, axes[0])
         k = kibby.loc[vtx_id]['conservation']
         ax_kibby = axes[1].plot(k)
+        f = protein_features_df[sorf_aa_seq]
+        imdf, textdf = features_to_int_arrays(f)
+        colorscale = [[0, '#454D59'], [0.25, '#FFFFFF'], [0.5, '#F1C40F'], [0.75, '#336641']]
+        # fig = ff.create_annotated_heatmap(z = imdf, x=imdf.columns, y=imdf.index, text=textdf.values)
+        plotly_fig = go.Figure(data=go.Heatmap(z=imdf.values, x=imdf.columns, y=imdf.index[:-1],
+                                        colorscale='Picnic', text=textdf.values, zmin=0, zmax=3,
+                                        showlegend=False, showscale=False))
         col1.pyplot(fig)
+        col1.plotly_chart(plotly_fig)
         # Blastp Mouse
         primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
         blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
@@ -444,11 +455,19 @@ def details(sorf_excel_df, xena_expression, xena_metadata,
     # plDDT, phylocsf, kibby, blast conservation
     with col1:    
         # Plot plDDT
-        fig, axes = plt.subplots(3, 1)
+        fig, axes = plt.subplots(3, 1, sharex=True)
         ax_plddt = plot_structure_plddt(plddt, axes[0])
         k = kibby.loc[vtx_id]['conservation']
         ax_kibby = axes[1].plot(k)
+        f = protein_features_df[sorf_aa_seq]
+        imdf, textdf = features_to_int_arrays(f)
+        colorscale = [[0, '#454D59'], [0.25, '#FFFFFF'], [0.5, '#F1C40F'], [0.75, '#336641']]
+        # fig = ff.create_annotated_heatmap(z = imdf, x=imdf.columns, y=imdf.index, text=textdf.values)
+        plotly_fig = go.Figure(data=go.Heatmap(z=imdf.values, x=imdf.columns, y=imdf.index[:-1],
+                                        colorscale='Picnic', text=textdf.values, zmin=0, zmax=3,
+                                        showlegend=False, showscale=False))
         col1.pyplot(fig)
+        col1.plotly_chart(plotly_fig)
     # Blastp Mouse
     if st.session_state['id_type_selected'] == 'primary_id':
         primary_id = st.session_state['detail_id_selected']
