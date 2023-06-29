@@ -387,7 +387,7 @@ def main():
         "sORF Table": sorf_table,
         "sORF Transcriptome Atlas": sorf_transcriptome_atlas,
         "sORF Genome Browser": genome_browser,
-        "sORF Selector": selector,
+        # "sORF Selector": selector,
     }
     
     sorf_excel_df = load_sorf_excel()
@@ -403,8 +403,8 @@ def main():
     with tab3:
         genome_browser()
         
-    with tab4:
-        selector(sorf_excel_df)
+    # with tab4:
+    #     selector(sorf_excel_df)
 
 
 # Run the app
