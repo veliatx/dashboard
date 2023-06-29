@@ -226,6 +226,13 @@ def sorf_table(sorf_excel_df):
         df,
         column_config={
             'vtx_id': st.column_config.TextColumn(disabled=True),
+            'primary_id': st.column_config.TextColumn(disabled=True),
+            'genscript_id': st.column_config.TextColumn(disabled=True),
+            'phase': st.column_config.TextColumn(disabled=True),
+            'orf_xref': st.column_config.TextColumn(disabled=True),
+            'protein_xrefs': st.column_config.TextColumn(disabled=True),
+            'gene_xref': st.column_config.TextColumn(disabled=True),
+
         },
         key='data_editor'
     )
@@ -276,7 +283,7 @@ def sorf_table(sorf_excel_df):
 
             with col2:
                 de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-                st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
+                st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
@@ -328,10 +335,19 @@ def sorf_table(sorf_excel_df):
 def sorf_transcriptome_atlas(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
-    data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+    
 
     with st.container():
         col1, col2, col3 = st.columns(3)
+        with col1:
+            tx_type = st.radio("sORF to transcript mapping",
+                               ('Boundary Overlap', 'Exact Overlap'))
+            
+            if tx_type == 'Boundary Overlap':
+                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+            else:
+                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+
         with col2:
             values = st.slider(
                 'Select Tissue Specificity Tau',

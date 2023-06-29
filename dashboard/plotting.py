@@ -123,14 +123,14 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
         }
       },
       'calculable': True,
-      'xAxis': [
+      'yAxis': [
         {
           'type': 'category',
           'data': list(dataframe[group_name].values),
-          'axisLabel': { 'interval': 0, 'rotate': 90}
+          'axisLabel': { 'interval': 0}#, 'rotate': 90}
         }
       ],
-      'yAxis': [
+      'xAxis': [
         {'type': 'value'}
       ],
         'color': ['#237c94', '#d62418'],
@@ -188,7 +188,6 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
         fig, ax = plt.subplots()
         sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
                                   cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-    
     else:
         fig = None
 
@@ -241,7 +240,6 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
     row_names = list(specific_df[0])
 
     js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
-    #st.write(js_col_names)
 
     option = {
         "tooltip": {
