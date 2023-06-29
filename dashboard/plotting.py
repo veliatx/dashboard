@@ -420,9 +420,20 @@ def expression_vtx_boxplot2(vtx_id, expression_df):
     """
     """
 
-    df = expression_df[['primary disease or tissue', vtx_id]]
+    df = expression_df[['primary disease or tissue', vtx_id]].copy()
     df.reset_index(inplace=True)
-    fig = px.box(df, x="primary disease or tissue", y=vtx_id, labels={'primary disease or tissue': 'GTEx Primary Tissue'}, points='all', hover_data='index')
+
+    medians = df.groupby('primary disease or tissue')[vtx_id].median().sort_values()
+
+    order_map = {name:i for i, name in enumerate(medians.index)}
+    df['order'] = df.apply(lambda x: order_map[x['primary disease or tissue']], axis=1)
+    df.sort_values(by='order', ascending=False, inplace=True)
+
+    fig = px.box(df, x="primary disease or tissue", 
+                 y=vtx_id,  
+                 points='outliers', hover_data='index',
+                 category_orders={''}, height=500)
+    
     fig.update_traces(quartilemethod="exclusive") # or "inclusive", or "linear" by default
 
     return fig
