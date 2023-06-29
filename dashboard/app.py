@@ -392,7 +392,7 @@ def main():
     
     sorf_excel_df = load_sorf_excel()
   
-    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
         sorf_table(sorf_excel_df)
