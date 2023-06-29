@@ -87,3 +87,7 @@ def ucsc_link(chrom, start, end):
     position = f"{chrom}:{start}-{end}"
     ucsc_link = f"{base_link}{genome}&position={position}"
     return ucsc_link
+
+def convert_list_string(x):
+    l = list(map(float, x.strip('][').split(',')))
+    return l

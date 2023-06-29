@@ -18,7 +18,7 @@ import py3Dmol
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
-from dashboard.util import filter_dataframe
+from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import plotting
 
@@ -193,7 +193,15 @@ def load_mouse_blastp_results():
     return hits_per_query
 
 
-@st.cache_data
+@st.cache_data()
+def load_phylocsf_data():
+    pcsf = pd.read_csv(f"../data/interim_phase1to6_all_phylocsf-vals_20230628.csv", index_col=0)
+    pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
+    pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
+           'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
+    return pcsf
+
+@st.cache_data()
 def convert_df(df):
     return df.to_csv().encode('utf-8')
 
@@ -241,6 +249,7 @@ def sorf_table(sorf_excel_df):
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
     protein_features_df = load_protein_feature_string_representations()
+    phylocsf_dataframe = load_phylocsf_data()
 
     if 'curr_vtx_id' in st.session_state.keys():
 
@@ -272,45 +281,40 @@ def sorf_table(sorf_excel_df):
             de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
             st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
             
-            # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
-            # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
-        # st.write(c2)
         col1, col2 = st.columns(2)
         # Load esmfold data for selected sORF
         sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
         structure = esmfold[sorf_aa_seq]['pdb']
-        plddt = esmfold[sorf_aa_seq]['plddt']
         # Plot esmfold structure
-        st.title('sORF ESMfold')
-        view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-        view.addModel(structure, 'pdb')
-        view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
-        view.zoomTo()
         with col2:
+            st.title('sORF ESMfold')
+            view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
+            view.addModel(structure, 'pdb')
+            view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
+            view.zoomTo()
             components.html(view._make_html(), height = 500,width=500)
-        # Plot plDDT
-        fig, axes = plt.subplots(2, 1, sharex=True)
-        ax_plddt = plotting.plot_structure_plddt(plddt, axes[0])
-        k = kibby.loc[vtx_id]['conservation']
-        ax_kibby = axes[1].plot(k)
-        f = protein_features_df[vtx_id]
-        imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
-        altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
-        col1.pyplot(fig)
-        col1.altair_chart(altair_signal_features_fig)
-        # Blastp Mouse
-        primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
-        blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
-        if len(blastp_results_selected_sorf) == 0:
-            long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
-        else:
-            long_text = ""
-            for h in blastp_results_selected_sorf:
-                hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
-                long_text+=hit_text
-                long_text+= h['alignment'] + '  \n  \n'
+        achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold)
+        col1.altair_chart(achart, use_container_width=False)
+        with st.container():
+            f = protein_features_df[vtx_id]
+            imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
+            altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
+            st.altair_chart(altair_signal_features_fig, use_container_width=True)
 
-        stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
+        with st.container():
+            # Blastp Mouse
+            primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
+            blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
+            if len(blastp_results_selected_sorf) == 0:
+                long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
+            else:
+                long_text = ""
+                for h in blastp_results_selected_sorf:
+                    hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
+                    long_text+=hit_text
+                    long_text+= h['alignment'] + '  \n  \n'
+    
+            stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
 
 
 def sorf_transcriptome_atlas(sorf_excel_df):
