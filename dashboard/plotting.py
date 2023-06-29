@@ -1,12 +1,13 @@
-import pandas as pd
-from streamlit_echarts import st_echarts, JsCode
-import streamlit as st
 import altair as alt
-import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import plotly.express as px
+import seaborn as sns
+import streamlit as st
+
 from plotly import graph_objects as go
+from streamlit_echarts import JsCode
 
 
 def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, title):

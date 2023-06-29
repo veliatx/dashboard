@@ -406,7 +406,5 @@ def main():
         selector(sorf_excel_df)
 
 
-# Run the app
 if __name__ == "__main__":
-
     main()
