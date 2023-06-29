@@ -362,6 +362,7 @@ def altair_protein_features_plot(df):
         tooltip = ['Position'])
     return fig+base.mark_text(baseline='middle').encode(alt.Text('aa:O'))
 
+
 def plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold):
     phylo_array = phylocsf_dataframe.loc[vtx_id, 'phylocsf_vals'][::3]
     kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]

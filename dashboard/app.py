@@ -1,31 +1,26 @@
-import streamlit as st
-import numpy as np
-from streamlit_plotly_events import plotly_events
-import plotly.express as px
-from plotly import graph_objects as go
-import matplotlib.pyplot as plt
-import pandas as pd
-from collections import defaultdict
-from st_aggrid import AgGrid, GridUpdateMode
-from st_aggrid.grid_options_builder import GridOptionsBuilder
-import streamlit_scrollable_textbox as stx
-# import seaborn_altair as salt
-import seaborn as sns
 import json
 import jsonlines
+import os
 import py3Dmol
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+import streamlit.components.v1 as components
+import streamlit_scrollable_textbox as stx
+
+from collections import defaultdict
+from streamlit_plotly_events import plotly_events
+from tqdm import tqdm
 
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
+from dashboard import plotting
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
-from dashboard import plotting
-
-import os
-import altair as alt
-from tqdm import tqdm
-import streamlit.components.v1 as components
 
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
@@ -201,6 +196,7 @@ def load_phylocsf_data():
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
     return pcsf
 
+
 @st.cache_data()
 def convert_df(df):
     return df.to_csv().encode('utf-8')
@@ -267,7 +263,6 @@ def sorf_table(sorf_excel_df):
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         
-
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
 
@@ -278,8 +273,8 @@ def sorf_table(sorf_excel_df):
                     st.pyplot(fig)
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+
             with col2:
-            # with st.container():
                 de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
                 st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
                 
