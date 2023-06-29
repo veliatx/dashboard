@@ -294,17 +294,9 @@ def sorf_table(sorf_excel_df):
                 # Load esmfold data for selected sORF
                 sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
                 plddt = esmfold[sorf_aa_seq]['plddt']
-                # Plot esmfold structure
-
-                # Plot plDDT
-                fig, axes = plt.subplots(2, 1, sharex=True)
-                ax_plddt = plotting.plot_structure_plddt(plddt, axes[0])
-                k = kibby.loc[vtx_id]['conservation']
-                ax_kibby = axes[1].plot(k)
-                f = protein_features_df[vtx_id]
-                imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
-                altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
-                col3.pyplot(fig)
+                # Plot plDDT, Phylocsf, and kibby
+                achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold)
+                col3.altair_chart(achart, use_container_width=False)
                         
             with col4:
                 structure = esmfold[sorf_aa_seq]['pdb']
@@ -314,7 +306,10 @@ def sorf_table(sorf_excel_df):
                 view.zoomTo()
                 st.header('sORF ESMfold')
                 components.html(view._make_html(), height=500, width=700)
-
+                
+            f = protein_features_df[vtx_id]
+            imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
+            altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
             st.altair_chart(altair_signal_features_fig, use_container_width=True)
 
         
