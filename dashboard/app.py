@@ -18,7 +18,7 @@ import py3Dmol
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
-from dashboard.util import filter_dataframe
+from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import plotting
 
@@ -193,7 +193,15 @@ def load_mouse_blastp_results():
     return hits_per_query
 
 
-@st.cache_data
+@st.cache_data()
+def load_phylocsf_data():
+    pcsf = pd.read_csv(f"../data/interim_phase1to6_all_phylocsf-vals_20230628.csv", index_col=0)
+    pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
+    pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
+           'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
+    return pcsf
+
+@st.cache_data()
 def convert_df(df):
     return df.to_csv().encode('utf-8')
 
@@ -241,6 +249,7 @@ def sorf_table(sorf_excel_df):
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
     protein_features_df = load_protein_feature_string_representations()
+    phylocsf_dataframe = load_phylocsf_data()
 
     if 'curr_vtx_id' in st.session_state.keys():
 
@@ -296,7 +305,6 @@ def sorf_table(sorf_excel_df):
                 imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
                 altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
                 col3.pyplot(fig)
-                col3.altair_chart(altair_signal_features_fig)
                         
             with col4:
                 structure = esmfold[sorf_aa_seq]['pdb']
@@ -306,6 +314,9 @@ def sorf_table(sorf_excel_df):
                 view.zoomTo()
                 st.header('sORF ESMfold')
                 components.html(view._make_html(), height=500, width=700)
+
+            st.altair_chart(altair_signal_features_fig, use_container_width=True)
+
         
         with st.expander("BLASTp results", expanded=True):
 
@@ -320,7 +331,7 @@ def sorf_table(sorf_excel_df):
                     hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
                     long_text+=hit_text
                     long_text+= h['alignment'] + '  \n  \n'
-
+    
             stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
 
 
