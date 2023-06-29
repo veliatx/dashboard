@@ -247,6 +247,7 @@ def sorf_table(sorf_excel_df):
         vtx_id = st.session_state['curr_vtx_id']
         selected_row = df[df['vtx_id'] == st.session_state['curr_vtx_id']]
 
+        st.divider()
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'primary_id', 'orf_xref', 'protein_xrefs', 'gene_xref']])
 
@@ -257,60 +258,70 @@ def sorf_table(sorf_excel_df):
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            # Plot transcript expression levels
-            fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
-            if fig:
-                st.pyplot(fig)
-            else:
-                st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
-        
-        
-        with col2:
-        # with st.container():
-            de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-            st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
-            
-            # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
-            # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
-        # st.write(c2)
-        col1, col2 = st.columns(2)
-        # Load esmfold data for selected sORF
-        sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
-        structure = esmfold[sorf_aa_seq]['pdb']
-        plddt = esmfold[sorf_aa_seq]['plddt']
-        # Plot esmfold structure
-        st.title('sORF ESMfold')
-        view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-        view.addModel(structure, 'pdb')
-        view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
-        view.zoomTo()
-        with col2:
-            components.html(view._make_html(), height = 500,width=500)
-        # Plot plDDT
-        fig, axes = plt.subplots(2, 1, sharex=True)
-        ax_plddt = plotting.plot_structure_plddt(plddt, axes[0])
-        k = kibby.loc[vtx_id]['conservation']
-        ax_kibby = axes[1].plot(k)
-        f = protein_features_df[vtx_id]
-        imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
-        altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
-        col1.pyplot(fig)
-        col1.altair_chart(altair_signal_features_fig)
-        # Blastp Mouse
-        primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
-        blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
-        if len(blastp_results_selected_sorf) == 0:
-            long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
-        else:
-            long_text = ""
-            for h in blastp_results_selected_sorf:
-                hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
-                long_text+=hit_text
-                long_text+= h['alignment'] + '  \n  \n'
 
-        stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
+        with st.expander("Transcription Data", expanded=True):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Plot transcript expression levels
+                fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                if fig:
+                    st.pyplot(fig)
+                else:
+                    st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+            with col2:
+            # with st.container():
+                de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+                st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
+                
+                # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
+                # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
+
+        with st.expander("Protein Structure and Function", expanded=True):
+            col3, col4 = st.columns(2)
+
+            with col3:
+
+                # Load esmfold data for selected sORF
+                sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
+                plddt = esmfold[sorf_aa_seq]['plddt']
+                # Plot esmfold structure
+
+                # Plot plDDT
+                fig, axes = plt.subplots(2, 1, sharex=True)
+                ax_plddt = plotting.plot_structure_plddt(plddt, axes[0])
+                k = kibby.loc[vtx_id]['conservation']
+                ax_kibby = axes[1].plot(k)
+                f = protein_features_df[vtx_id]
+                imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
+                altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
+                col3.pyplot(fig)
+                col3.altair_chart(altair_signal_features_fig)
+                        
+            with col4:
+                structure = esmfold[sorf_aa_seq]['pdb']
+                view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
+                view.addModel(structure, 'pdb')
+                view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
+                view.zoomTo()
+                st.header('sORF ESMfold')
+                components.html(view._make_html(), height=500, width=700)
+        
+        with st.expander("BLASTp results", expanded=True):
+
+            # Blastp Mouse
+            primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
+            blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
+            if len(blastp_results_selected_sorf) == 0:
+                long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
+            else:
+                long_text = ""
+                for h in blastp_results_selected_sorf:
+                    hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
+                    long_text+=hit_text
+                    long_text+= h['alignment'] + '  \n  \n'
+
+            stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
 
 
 def sorf_transcriptome_atlas(sorf_excel_df):
