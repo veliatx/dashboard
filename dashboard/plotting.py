@@ -1,11 +1,63 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-import seaborn as sns
-from streamlit_echarts import JsCode
+from streamlit_echarts import st_echarts, JsCode
 import streamlit as st
+import altair as alt
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 import plotly.express as px
 from plotly import graph_objects as go
+
+
+def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, title):
+    """
+    Parameters
+    ----------
+    transcript_ids : List[string]
+        The transcript IDs to plot differential expression for. (Assumes they exist in data).
+    de_tables_dict : Dict
+        Dictionary of transcript_id keys and dataframe values. Dataframes contain tables of DE 
+          results for different cancer types.
+          
+    """
+    sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
+    sum_expression_cancer['condition'] = 'Cancer'
+    sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
+    sum_expression_normal['condition'] = 'GTEx'
+    de = pd.DataFrame([de_tables_dict[tid]['padj']<0.00001 for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
+    result['TCGA'] = result.index
+    result['# DE Transcripts'] = [de.loc[i] for i in result.index]
+    # Define the bar plot using plotly express
+    return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], title)
+
+
+def plot_vtx_transcripts_heatmap(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
+    selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+    selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+    selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
+    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+    set2 = sns.color_palette('Set2', n_colors=2)
+    if len(xena_overlap)>1:
+        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+        selected_expression = xena_expression[xena_overlap]
+        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+        heatmap_figure = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
+                                cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+    elif len(xena_overlap) == 1:
+        # st.write('Only 1 transcript')
+        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+        selected_expression = xena_expression[list(xena_overlap)]
+        # selected_expression['Null'] = -1
+        # col_colors.append(set2[1])
+        print(selected_expression.shape, col_colors)
+        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+        heatmap_figure, ax = plt.subplots()
+        sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
+                                cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+    else:
+        return 'No transcripts in TCGA/GTEx/TARGET found containing this sORF'
+    return heatmap_figure
 
 
 def plot_structure_plddt(plddt, ax):
@@ -45,9 +97,7 @@ def expression_de_to_echarts_data(expression_values, de_values, color):
     return data
 
 
-def bar_plot_expression_groups(dataframe, group_name, group_members):
-    """
-    """
+def bar_plot_expression_groups(dataframe, group_name, group_members, title):
     if dataframe.shape[0]>0:
         dataframe = dataframe.copy()
         new_df = pd.DataFrame()
@@ -59,7 +109,7 @@ def bar_plot_expression_groups(dataframe, group_name, group_members):
     else:
         return None
     option = {
-      'title': {'text': 'Expression Data'},
+      'title': {'text': title},
       'tooltip': {'trigger': 'axis'},
       'legend': {'data': group_members},
       'toolbox': {
@@ -277,18 +327,38 @@ def expression_vtx_boxplot(vtx_id, expression_df):
     return fig
 
 
-def features_to_int_arrays(row):
-    char_to_int = {'S': 1, 'C': 0, 'O': 2, 'M': 3, 'I': 0}
-    convert_to_integer_array = lambda x: np.array([char_to_int[i] for i in x])
-    textrow = row.apply(lambda x: [i for i in x]).copy()
-    row = row.apply(convert_to_integer_array)
-    imdf = pd.DataFrame(index = [i for i in row.name])
-    textdf = pd.DataFrame(index = [i for i in row.name])
-    for ix, row in row.items():
-        imdf[ix] = row
-        textdf[ix] = textrow.loc[ix]
-    imdf = imdf.T
-    textdf = textdf.T
-    imdf.loc['aa'] = imdf.columns
-    imdf.columns = np.arange(imdf.shape[1])
-    return imdf, textdf
+def format_protein_feature_strings_for_altair_heatmap(orf_features):
+    # orf_features = orf_string_table.T[vtx_id]
+    orf_features = orf_features.T
+    orf_features = orf_features.apply(lambda x: [*x])
+    seq = orf_features.pop('Sequence')
+    values = []
+    for i, (ix, row) in enumerate(orf_features.items()):
+        for j, v in enumerate(row):
+            values.append([j, ix, v, seq[j]])
+    df = pd.DataFrame(values, columns = ['Position', 'Tool', 'Predicted Class', 'aa'])
+    return df
+
+
+def altair_protein_features_plot(df):
+    color_dict = {
+        'S': 'palegoldenrod',
+        'C': 'lightgray',
+        'I': 'lightgray',
+        'O': 'lightblue'
+    }
+    
+    color_scale = alt.Scale(domain=list(color_dict.keys()), range=list(color_dict.values()))
+
+    base = alt.Chart(df).encode(
+        alt.X('Position:O'),
+        alt.Y('Tool:O')
+    )
+    fig = base.mark_rect().encode(
+        color=alt.Color('Predicted Class:O', scale=color_scale, legend=alt.Legend(
+        orient='none',
+        legendX=130, legendY=-60,
+        direction='horizontal',
+        titleAnchor='middle')),
+        tooltip = ['Position'])
+    return fig+base.mark_text(baseline='middle').encode(alt.Text('aa:O'))

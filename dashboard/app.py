@@ -27,7 +27,6 @@ import altair as alt
 from tqdm import tqdm
 import streamlit.components.v1 as components
 
-from plotting import plot_structure_plddt, expression_de_to_echarts_data, bar_plot_expression_groups, features_to_int_arrays
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
@@ -69,14 +68,14 @@ def load_kibby_results(sorf_excel):
 @st.cache_data()
 def load_de_results(transcripts):
     cache_filez = os.listdir(CACHE_DIR)
-    de_tables_dict = {}
+    temp_dict = {}
     for f in cache_filez:
         if f.endswith('_de.parq') and not (f=='expression_de.parq'):
             df = pd.read_parquet(os.path.join(CACHE_DIR, f))
-            df = df.loc[df.index.intersection(transcripts)]
-            de_tables_dict[f.split('_')[0]] = df
+            df = df.loc[df.index.intersection(transcripts)].copy()
+            temp_dict[f.split('_')[0]] = df
     de_tables_dict = defaultdict(dict)
-    for c, df in tqdm(de_tables_dict.items()):
+    for c, df in tqdm(temp_dict.items()):
         for row in df.itertuples():
             de_tables_dict[row[0]][c] = {'Cancer Average': row._7, 'GTEx Average': row._8, 
                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
@@ -110,12 +109,17 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
         for val in row[vtx_combination_type]:
             transcript_to_vtx_id[val] = ix
 
+    transcript_to_vtx_id_overlapping = {}
+    for ix, row in vtx_id_to_transcripts.iterrows():
+        for val in row['transcripts_overlapping']:
+            transcript_to_vtx_id_overlapping[val] = ix
+            
     # Sum transcripts for VTX id
     xena_vtx_sums = xena_expression.T.copy()
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
     xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
     xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
-    de_tables_dict = load_de_results(list(transcript_to_vtx_id.keys()))
+    de_tables_dict = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
     return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict
 
 
@@ -231,6 +235,7 @@ def sorf_table(sorf_excel_df):
 
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
+    # Load data
     xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
@@ -247,6 +252,10 @@ def sorf_table(sorf_excel_df):
 
         #link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
         #st.write(f"UCSC Browser [link]({link})")
+        selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+        selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+        selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
+        xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -257,17 +266,15 @@ def sorf_table(sorf_excel_df):
             else:
                 st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
         
-        # st.write(xena_overlap)
-        # # Barplot Tumor vs NAT
-        # fig, ax = plt.subplots(figsize=(9, 3))
+        
         with col2:
-            fig, result = plotting.expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict)
-            st.plotly_chart(fig)
-            #with st.container():
-            #    st.write(result)
-            #    option = bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'])
-            #    st_echarts(option, height="1000px")
+        # with st.container():
+            de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+            st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
             
+            # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
+            # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
+        # st.write(c2)
         col1, col2 = st.columns(2)
         # Load esmfold data for selected sORF
         sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
@@ -281,21 +288,16 @@ def sorf_table(sorf_excel_df):
         view.zoomTo()
         with col2:
             components.html(view._make_html(), height = 500,width=500)
-        # showmol(view, height=500, width=1200)
         # Plot plDDT
         fig, axes = plt.subplots(2, 1, sharex=True)
-        ax_plddt = plot_structure_plddt(plddt, axes[0])
+        ax_plddt = plotting.plot_structure_plddt(plddt, axes[0])
         k = kibby.loc[vtx_id]['conservation']
         ax_kibby = axes[1].plot(k)
-        f = protein_features_df[sorf_aa_seq]
-        imdf, textdf = features_to_int_arrays(f)
-        colorscale = [[0, '#454D59'], [0.25, '#FFFFFF'], [0.5, '#F1C40F'], [0.75, '#336641']]
-        # fig = ff.create_annotated_heatmap(z = imdf, x=imdf.columns, y=imdf.index, text=textdf.values)
-        plotly_fig = go.Figure(data=go.Heatmap(z=imdf.values, x=imdf.columns, y=imdf.index[:-1],
-                                        colorscale='Picnic', text=textdf.values, zmin=0, zmax=3,
-                                        showlegend=False, showscale=False))
+        f = protein_features_df[vtx_id]
+        imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
+        altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
         col1.pyplot(fig)
-        col1.plotly_chart(plotly_fig)
+        col1.altair_chart(altair_signal_features_fig)
         # Blastp Mouse
         primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
         blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
@@ -321,7 +323,6 @@ def sorf_transcriptome_atlas(sorf_excel_df):
         with col2:
             values = st.slider(
                 'Select Tissue Specificity Tau',
-                
                 0.0, 1.0, (.8, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
         
@@ -336,12 +337,11 @@ def sorf_transcriptome_atlas(sorf_excel_df):
             fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
             st.plotly_chart(fig, use_container_width=True)
 
-        
         df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
         st.header('Tissue specific sORFs')
         st.dataframe(df)
            
-    
+
 def selector(sorf_excel_df):
     st.title("Select sORFs Interactively")
     st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_excel_df.columns, index=11)
