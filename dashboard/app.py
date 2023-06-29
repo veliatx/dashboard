@@ -31,11 +31,13 @@ from plotting import plot_structure_plddt, expression_de_to_echarts_data, bar_pl
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
+
 @st.cache_data()
 def load_protein_feature_string_representations():
     df = pd.read_parquet('../data/sequence_features_strings.parq').T
     return df
-# Load data
+
+
 @st.cache_data()
 def load_sorf_excel():
     """
@@ -121,9 +123,11 @@ def load_xena_tcga_gtex_target():
 def load_xena_heatmap():
     xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target()
     
+    xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
+
     xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
     transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
-    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(xena_vtx_sum_df['_primary_site']).aggregate(np.mean)
+    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(xena_vtx_sum_df['primary disease or tissue']).aggregate(np.mean)
 
     threshold = .1
     mean_vals = xena_vtx_sum_df.max()
@@ -153,7 +157,8 @@ def load_xena_heatmap():
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
 
-    return data, col_names, row_names, xena_tau_df, xena_exp_df
+
+    return data, col_names, row_names, xena_tau_df, xena_vtx_exp_df
 
 
 @st.cache_data()
@@ -309,7 +314,7 @@ def sorf_table(sorf_excel_df):
 def sorf_heatmap(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
-    data, col_names, row_names, xena_tau_df, xena_exp_df = load_xena_heatmap()
+    data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
 
     with st.container():
         col1, col2, col3 = st.columns(3)
@@ -328,8 +333,11 @@ def sorf_heatmap(sorf_excel_df):
             st.header('Selected sORF')
             st.dataframe(sorf_excel_df[sorf_excel_df['vtx_id'] == value][display_cols])
             
-            boxplot = plotting.expression_vtx_boxplot(value, xena_exp_df)
-            st_echarts(boxplot, height="500px")
+            #boxplot = plotting.expression_vtx_boxplot(value, xena_exp_df)
+            #st_echarts(boxplot, height="500px")
+            fig = plotting.expression_vtx_boxplot2(value, xena_vtx_exp_df)
+            st.plotly_chart(fig, use_container_width=True)
+
         
         df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
         st.header('Tissue specific sORFs')
@@ -363,127 +371,7 @@ def ccle_viewer(ccle_expression, sorf_table):
                      update_mode = GridUpdateMode.GRID_CHANGED,
                      reload_data = False,
                      editable = False)
-
-
-def details(sorf_excel_df, xena_expression, xena_metadata,
-            vtx_id_to_transcripts, de_tables_dict,
-            esmfold, blastp_mouse_hits, kibby):
-    # Header text
-    st.title('sORF Details')
-    # Select a single sORF to plot and convert ID to vtx_id
-    st.session_state['id_type_selected'] = st.radio("ID Type", options=('vtx_id', 'primary_id', 'genscript_id'), index=0, horizontal=True)
-    st.session_state['detail_id_selected'] = st.selectbox("Select ORF", options = sorf_excel_df[st.session_state['id_type_selected']])
-    if st.session_state['id_type_selected'] == 'vtx_id':
-        vtx_id = st.session_state['detail_id_selected']
-    else:
-        vtx_id = sorf_excel_df[sorf_excel_df[st.session_state['id_type_selected']] == st.session_state['detail_id_selected']].iloc[0]['vtx_id']
-    if '|' in vtx_id:
-        vtx_id = vtx_id.split('|')[0]
-    selected_row = sorf_excel_df[sorf_excel_df[st.session_state['id_type_selected']] == st.session_state['detail_id_selected']].iloc[0]
-    link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
-    
-    st.write(f"UCSC Browser [link]({link})")
-    # Transcriptional Data
-    col1, col2 = st.columns(2)
-    with col1:
-        # Plot transcript expression levels
-        selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-        selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
-        selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-        xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-        set2 = sns.color_palette('Set2', n_colors=2)
-        if len(xena_overlap)>1:
-            col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-            selected_expression = xena_expression[xena_overlap]
-            groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-            cmap_fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
-                                      cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-            st.pyplot(cmap_fig)
-        elif len(xena_overlap) == 1:
-            st.write('Only 1 transcript')
-            col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-            selected_expression = xena_expression[list(xena_overlap)]
-            print(selected_expression.shape, col_colors)
-            groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-            fig, ax = plt.subplots()
-            sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
-                                      cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-            st.write(fig)
-        else:
-            st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
-            
-    # # Barplot Tumor vs GTEx
-    with col2:
-        tids = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-        sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-        sum_expression_cancer['condition'] = 'Cancer'
-        sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  tids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-        sum_expression_normal['condition'] = 'GTEx'
-        de = pd.DataFrame([de_tables_dict[tid]['padj']<0.001 for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0)
-        result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
-        result['TCGA'] = result.index
-        result['# DE Transcripts'] = [de.loc[i] for i in result.index]
-    
-        # Define the bar plot using Plotly
-        fig = px.bar(result, x='TCGA', y='Sum', color='condition', barmode='group')
-        fig.add_trace(go.Scatter(
-            x=result['TCGA'],
-            y=result['Sum'],
-            mode="text",
-            name="# DE Transcripts",
-            text=result['# DE Transcripts'],
-            textposition="top left",
-            showlegend=False
-        ))
-        st.plotly_chart(fig)
-        bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'])
-    # Protein Info
-    col1, col2 = st.columns(2)
-    with col2:
-        # Load esmfold data for selected sORF
-        sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
-        structure = esmfold[sorf_aa_seq]['pdb']
-        plddt = esmfold[sorf_aa_seq]['plddt']
-        # Plot esmfold structure
-        view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-        view.addModel(structure, 'pdb')
-        view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
-        view.zoomTo()
-        components.html(view._make_html(), height = 350,width=400)
-        # Plot signalP/TM algo results below ESMFold Window
-    # Plot amino acid level Values
-    # plDDT, phylocsf, kibby, blast conservation
-    with col1:    
-        # Plot plDDT
-        fig, axes = plt.subplots(3, 1, sharex=True)
-        ax_plddt = plot_structure_plddt(plddt, axes[0])
-        k = kibby.loc[vtx_id]['conservation']
-        ax_kibby = axes[1].plot(k)
-        f = protein_features_df[sorf_aa_seq]
-        imdf, textdf = features_to_int_arrays(f)
-        colorscale = [[0, '#454D59'], [0.25, '#FFFFFF'], [0.5, '#F1C40F'], [0.75, '#336641']]
-        # fig = ff.create_annotated_heatmap(z = imdf, x=imdf.columns, y=imdf.index, text=textdf.values)
-        plotly_fig = go.Figure(data=go.Heatmap(z=imdf.values, x=imdf.columns, y=imdf.index[:-1],
-                                        colorscale='Picnic', text=textdf.values, zmin=0, zmax=3,
-                                        showlegend=False, showscale=False))
-        col1.pyplot(fig)
-        col1.plotly_chart(plotly_fig)
-    # Blastp Mouse
-    if st.session_state['id_type_selected'] == 'primary_id':
-        primary_id = st.session_state['detail_id_selected']
-    else:
-        primary_id = sorf_excel_df[sorf_excel_df[st.session_state['id_type_selected']] == st.session_state['detail_id_selected']].iloc[0]['primary_id']
-    blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
-    if len(blastp_results_selected_sorf) == 0:
-        long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
-    else:
-        long_text = ""
-        for h in blastp_results_selected_sorf:
-            hit_text = f"Match IDs: {h['hit_ids']}  \nAlign Stats: Score - {h['score']}, Length - {h['align_len']}  \n"
-            long_text+=hit_text
-            long_text+= h['alignment'] + '  \n  \n'
-    stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
-                  
+           
     
 def selector(sorf_excel_df):
     st.title("Select sORFs Interactively")
@@ -534,9 +422,6 @@ def main():
 
     with tab3:
         genome_browser()
-
-    #with tab3:
-    #    details(sorf_excel_df, xena_expression, xena_metadata, vtx_id_to_transcripts, de_tables_dict, esmfold, blastp_mouse_hits, kibby)
         
     with tab4:
         selector(sorf_excel_df)

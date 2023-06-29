@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from streamlit_echarts import st_echarts
+from streamlit_echarts import st_echarts, JsCode
 import streamlit as st
 import plotly.express as px
 from plotly import graph_objects as go
@@ -189,20 +189,30 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
     
     row_names = list(specific_df[0])
 
+    js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
+    #st.write(js_col_names)
+
     option = {
-        "tooltip": {},
+        "tooltip": {
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
+        },
         "xAxis": {
             "type": "category", 
             "data": row_names, 
             "axisLabel": {
                 "fontSize": 10,
                 "rotate": -90,
-                "width": 100,
+                "interval": 1,
             }
             },
         "yAxis": {
             "type": "category", 
-            "data": col_names, 
+            "data": col_names,
+            "axisLabel": {
+                "fontSize": 11,
+                "width": 0,
+                "interval": 0,
+            } 
             },
         "visualMap": {
             "min": 0,
@@ -213,16 +223,21 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
             "left": '95%',
             "top": 'center'
         },
+        "grid": {
+            #"containLabel": True,
+            "left": '20%',
+        },
         "series": [
             {
                 "name": "Log2(TPM+1)",
                 "type": "heatmap",
                 "data": subset_data,
-                #"label": {"show": True},
                 "emphasis": {
                     "itemStyle": {
-                    "borderColor": '#333',
-                        "borderWidth": 1
+                        "borderColor": '#333',
+                        "borderWidth": 1,
+                        "shadowBlur": 10,
+                        "shadowColor": 'rgba(0, 0, 0, 0.5)'
                     }
                 },
                 "progressive": 1000,
@@ -233,7 +248,7 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
     
     events = {
         "click": "function(params) { console.log(params.name); return params.name }",
-        "dblclick":"function(params) { return [params.type, params.name, params.value] }"
+        "dblclick": "function(params) { return [params.type, params.name, params.value] }"
     }
 
     return option, events, tissue_specific_vtx_ids
@@ -399,6 +414,18 @@ def expression_vtx_boxplot(vtx_id, expression_df):
     }
     return option
     st_echarts(option, height="400px")
+
+
+def expression_vtx_boxplot2(vtx_id, expression_df):
+    """
+    """
+
+    df = expression_df[['primary disease or tissue', vtx_id]]
+    df.reset_index(inplace=True)
+    fig = px.box(df, x="primary disease or tissue", y=vtx_id, labels={'primary disease or tissue': 'GTEx Primary Tissue'}, points='all', hover_data='index')
+    fig.update_traces(quartilemethod="exclusive") # or "inclusive", or "linear" by default
+
+    return fig
 
 
 def features_to_int_arrays(row):
