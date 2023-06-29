@@ -274,7 +274,6 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
             "top": 'center'
         },
         "grid": {
-            #"containLabel": True,
             "left": '20%',
         },
         "series": [
