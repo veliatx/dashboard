@@ -280,8 +280,9 @@ def sorf_table(sorf_excel_df):
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
             with col2:
             # with st.container():
-                de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-                st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
+                if len(xena_overlap) > 0:
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
