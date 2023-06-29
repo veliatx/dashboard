@@ -363,15 +363,20 @@ def altair_protein_features_plot(df):
     return fig+base.mark_text(baseline='middle').encode(alt.Text('aa:O'))
 
 def plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold):
-    phylo_array = phylocsf_dataframe.loc[vtx_id, 'phylocsf_vals'][::3]
-    kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
-    plddt = esmfold[sorf_aa_seq]['plddt']
-    rows = []
-    for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt, 'Kibby Conservation': kib}.items():
-        for i, i_val in enumerate(j_vals):
-            rows.append((j_key, i, i_val))
-    cons_altair_table = pd.DataFrame(rows, columns = ['Tool', 'Position', 'value'])
-    return alt.Chart(cons_altair_table).mark_line().encode(x='Position:N',
-                                                           y='value:Q', color='Tool:O').properties( width=400, height=125
-                                                                                                            ).facet('Tool:O', columns=1)
+    try:
+        phylo_array = phylocsf_dataframe.loc[vtx_id, 'phylocsf_vals'][::3]
+        kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
+        plddt = esmfold[sorf_aa_seq]['plddt']
+        rows = []
+        for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt, 'Kibby Conservation': kib}.items():
+            for i, i_val in enumerate(j_vals):
+                rows.append((j_key, i, i_val))
+        cons_altair_table = pd.DataFrame(rows, columns = ['Tool', 'Position', 'value'])
+        return alt.Chart(cons_altair_table).mark_line()\
+                                           .encode(x='Position:N', y='value:Q', color='Tool:O')\
+                                           .properties(width=400, height=125)\
+                                           .facet('Tool:O', columns=1)\
+                                           .resolve_scale(x='independent', y='independent')
+    except:
+        return None
 
