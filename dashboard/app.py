@@ -97,19 +97,19 @@ def load_esmfold():
 
 
 @st.cache_data()
-def load_xena_tcga_gtex_target():
+def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
     # Expression is saved as TPM + 0.001 (NOT LOGGED)
     xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
     xena_metadata = xena_expression[xena_expression.columns[:6]]
     xena_expression = xena_expression[xena_expression.columns[6:]]
-    xena_expression = np.log2(xena_expression + 1)
 
     vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
     # Map VTX to transcript ids - some 
     transcript_to_vtx_id = {}
     for ix, row in vtx_id_to_transcripts.iterrows():
-        for val in row['transcripts_overlapping']:
+        for val in row[vtx_combination_type]:
             transcript_to_vtx_id[val] = ix
+
     # Sum transcripts for VTX id
     xena_vtx_sums = xena_expression.T.copy()
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
@@ -120,9 +120,11 @@ def load_xena_tcga_gtex_target():
 
 
 @st.cache_data()
-def load_xena_heatmap():
-    xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target()
+def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
+    xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target(vtx_combination_type)
     
+    xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
+
     xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
 
     xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
@@ -157,7 +159,6 @@ def load_xena_heatmap():
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
 
-
     return data, col_names, row_names, xena_tau_df, xena_vtx_exp_df
 
 
@@ -190,7 +191,6 @@ def load_mouse_blastp_results():
 
 @st.cache_data
 def convert_df(df):
-    # IMPORTANT: Cache the conversion to prevent computation on every rerun
     return df.to_csv().encode('utf-8')
 
 
@@ -243,7 +243,7 @@ def sorf_table(sorf_excel_df):
         selected_row = df[df['vtx_id'] == st.session_state['curr_vtx_id']]
 
         st.header('sORF Details')
-        st.dataframe(selected_row[['vtx_id', 'primary_id', 'orf_xref', 'protein_xrefs']])
+        st.dataframe(selected_row[['vtx_id', 'primary_id', 'orf_xref', 'protein_xrefs', 'gene_xref']])
 
         #link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
         #st.write(f"UCSC Browser [link]({link})")
@@ -311,7 +311,7 @@ def sorf_table(sorf_excel_df):
         stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
 
 
-def sorf_heatmap(sorf_excel_df):
+def sorf_transcriptome_atlas(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
     data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
@@ -333,44 +333,13 @@ def sorf_heatmap(sorf_excel_df):
             st.header('Selected sORF')
             st.dataframe(sorf_excel_df[sorf_excel_df['vtx_id'] == value][display_cols])
             
-            #boxplot = plotting.expression_vtx_boxplot(value, xena_exp_df)
-            #st_echarts(boxplot, height="500px")
-            fig = plotting.expression_vtx_boxplot2(value, xena_vtx_exp_df)
+            fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
             st.plotly_chart(fig, use_container_width=True)
 
         
         df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
         st.header('Tissue specific sORFs')
         st.dataframe(df)
-
-
-def ucsc_link(chrom, start, end):
-    base_link = "http://genome.ucsc.edu/cgi-bin/hgTracks?"
-    genome = "db=hg38"
-    position = f"{chrom}:{start}-{end}"
-    ucsc_link = f"{base_link}{genome}&position={position}"
-    return ucsc_link
-
-
-def ccle_viewer(ccle_expression, sorf_table):
-    st.session_state['ccle_vtx_id'] = st.selectbox("Select ORF", options = sorf_table.index)
-    vtx_id = st.session_state['ccle_vtx_id']
-    md_columns = exp.columns[:7]
-    subset = ccle_expression[list(md_columns)+sorf_table.loc[vtx_id, 'transcripts_exact']].copy()
-    subset['Sum Exact Match'] = ccle_expression[sorf_table.loc[vtx_id, 'transcripts_exact']].sum(axis=1)
-    subset['Sum Overlapping Match'] = ccle_expression[[i for i in sorf_table.loc[vtx_id, 'transcripts_overlapping'] if i in ccle_expression.columns]].sum(axis=1)
-    gd = GridOptionsBuilder.from_dataframe(sorf_excel_df)
-    gd.configure_pagination(enabled=True)
-    gd.configure_selection(use_checkbox=True)
-    gridOptions = gd.build()
-    ag_grid = AgGrid(subset, gridOptions = gridOptions,
-                     # fit_columns_on_grid_load = True,
-                     height=500,
-                     width = "200%",
-                     theme = "streamlit",
-                     update_mode = GridUpdateMode.GRID_CHANGED,
-                     reload_data = False,
-                     editable = False)
            
     
 def selector(sorf_excel_df):
@@ -398,37 +367,26 @@ def main():
     # Define a dictionary with the page names and corresponding functions
     pages = {
         "sORF Table": sorf_table,
-        "sORF Transcriptome Atlas": sorf_heatmap,
-        #"sORF Details": details,
+        "sORF Transcriptome Atlas": sorf_transcriptome_atlas,
         "sORF Genome Browser": genome_browser,
         "sORF Selector": selector,
-        #"CCLE Expression": ccle_viewer
     }
     
     sorf_excel_df = load_sorf_excel()
-    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
-    esmfold = load_esmfold()
-    blastp_mouse_hits = load_mouse_blastp_results()
-    kibby = load_kibby_results(sorf_excel_df)
-    # sorf_json_table = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'))
-    
+  
     tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
 
     with tab1:
         sorf_table(sorf_excel_df)
 
     with tab2:
-        sorf_heatmap(sorf_excel_df)
+        sorf_transcriptome_atlas(sorf_excel_df)
 
     with tab3:
         genome_browser()
         
     with tab4:
         selector(sorf_excel_df)
-
-    # with tab5:
-        
-        # ccle_viewer()
 
 
 # Run the app
