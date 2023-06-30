@@ -273,27 +273,27 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
             "max": grouped_exp_df.max().max(),
             "calculable": True,
             "realtime": False,
-            "inRange": {
-                "color": [
-                    '#5782bc', 
-                    '#7e9ac2', 
-                    '#a3b4cd', 
-                    '#cad0dd', 
-                    '#efeef1', 
-                    '#f7eae8', 
-                    '#e6c5c3', 
-                    '#d7a09d', 
-                    '#c87e7b', 
-                    '#b95b5a'
-                ]
-            },
+            #"inRange": {
+            #    "color": [
+            #        '#5782bc', 
+            #        '#7e9ac2', 
+            #        '#a3b4cd', 
+            #        '#cad0dd', 
+            #        '#efeef1', 
+            #        '#f7eae8', 
+            #        '#e6c5c3', 
+            #        '#d7a09d', 
+            #        '#c87e7b', 
+            #        '#b95b5a'
+            #    ]
+            #},
             "orient": 'vertical',
             "left": '90%',
             "top": 'center'
         },
         "grid": {
             "left": '30%',
-            "bottom": '10%'
+            "bottom": '15%'
         },
         "series": [
             {
@@ -411,7 +411,21 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
             "realtime": False,
             "orient": 'vertical',
             "left": '95%',
-            "top": 'center'
+            "top": 'center',
+            #"inRange": {
+            #    "color": [
+            #        '#5782bc', 
+            #        '#7e9ac2', 
+            #        '#a3b4cd', 
+            #        '#cad0dd', 
+            #        '#efeef1', 
+            #        '#f7eae8', 
+            #        '#e6c5c3', 
+            #        '#d7a09d', 
+            #        '#c87e7b', 
+            #        '#b95b5a'
+            #    ]
+            #},
         },
         "grid": {
             "left": '20%',
@@ -446,7 +460,9 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
 def expression_vtx_boxplot(vtx_id, expression_df):
     """
     """
-
+    if '**' in vtx_id:
+        vtx_id = vtx_id[2:]
+        
     df = expression_df[['primary disease or tissue', vtx_id]].copy()
     df.reset_index(inplace=True)
 
