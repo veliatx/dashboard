@@ -62,24 +62,6 @@ def plot_vtx_transcripts_heatmap(vtx_id, vtx_id_to_transcripts, xena_expression,
     return heatmap_figure
 
 
-def plot_structure_plddt(plddt, ax):
-    """
-    """
-    fs=8
-    n_aa = len(plddt)
-    ax.plot(range(n_aa), plddt)
-    ax.set_title("ESMFold Prediction Confidence", fontsize=fs)
-    ax.set_xlabel("Amino Acid", fontsize=fs)
-    ax.set_ylabel("plDDT", fontsize=fs)
-    ax.set_xticks(ax.get_xticks(), ax.get_xticklabels(), fontsize=fs)
-    ax.set_yticks(ax.get_yticks(), ax.get_yticklabels(), fontsize=fs)
-    ax.set_xlim(0, n_aa)
-    ax.set_ylim([0, 100])
-    ax.hlines(50, 0, n_aa, linestyle='--', color='r', alpha=0.5, label='Low Confidence')
-    ax.hlines(90, 0, n_aa, linestyle='--', color='g', alpha=0.5, label='High Confidence')
-    return ax
-
-
 def expression_de_to_echarts_data(expression_values, de_values, color):
     """
     """
@@ -118,7 +100,6 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
         'show': True,
         'feature': {
           'dataView': { 'show': True, 'readOnly': False },
-          # 'magicType': { show: true, type: ['line', 'bar'] },
           'restore': { 'show': True },
           'saveAsImage': { 'show': True }
         }
@@ -140,25 +121,19 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
           'name': group_members[0],
           'type': 'bar',
           'data': expression_de_to_echarts_data(dataframe[group_members[0]], dataframe['DE'], 'blue')
-          # markPoint: {
-          #   data: [
-          #     { type: 'max', name: 'Max' },
-          #     { type: 'min', name: 'Min' }
-          #   ]
-          # },
         },
         {
           'name': group_members[1],
           'type': 'bar',
           'data': expression_de_to_echarts_data(dataframe[group_members[1]], dataframe['DE'], 'red')
-          # markPoint: {
-          #   data: [
-          #     { type: 'max', name: 'Max' },
-          #     { type: 'min', name: 'Min' }
-          #   ]
-          # },
         },
-      ]
+      ],
+    'grid': {
+          'left': 50,
+          'top': 50,
+          'right': 50,
+          'bottom': 50
+        }
     }
 
     return option
@@ -500,7 +475,8 @@ def altair_protein_features_plot(df):
         'S': 'palegoldenrod',
         'C': 'lightgray',
         'I': 'lightgray',
-        'O': 'lightblue'
+        'O': 'lavenderblush',
+        'M': 'lightblue'
     }
     
     color_scale = alt.Scale(domain=list(color_dict.keys()), range=list(color_dict.values()))
@@ -512,28 +488,30 @@ def altair_protein_features_plot(df):
     fig = base.mark_rect().encode(
         color=alt.Color('Predicted Class:O', scale=color_scale, legend=alt.Legend(
         orient='none',
-        legendX=130, legendY=-60,
+        legendX=45, legendY=150,
         direction='horizontal',
         titleAnchor='middle')),
-        tooltip = ['Position'])
+        tooltip = ['Position', 'Predicted Class'])
     return fig+base.mark_text(baseline='middle').encode(alt.Text('aa:O'))
 
 
 def plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold):
-    try:
+    # try:
+    if vtx_id in phylocsf_dataframe.index:
         phylo_array = phylocsf_dataframe.loc[vtx_id, 'phylocsf_vals'][::3]
-        kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
-        plddt = esmfold[sorf_aa_seq]['plddt']
-        rows = []
-        for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt, 'Kibby Conservation': kib}.items():
-            for i, i_val in enumerate(j_vals):
-                rows.append((j_key, i, i_val))
-        cons_altair_table = pd.DataFrame(rows, columns = ['Tool', 'Position', 'value'])
-        return alt.Chart(cons_altair_table).mark_line()\
-                                           .encode(x='Position:N', y='value:Q', color='Tool:O')\
-                                           .properties(width=400, height=125)\
-                                           .facet('Tool:O', columns=1)\
-                                           .resolve_scale(x='independent', y='independent')
-    except:
-        return None
+    else:
+        phylo_array = [np.nan]*len(sorf_aa_seq)
+    kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
+    plddt = esmfold[sorf_aa_seq]['plddt']
+    rows = []
+    for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt, 'Kibby Conservation': kib}.items():
+        for i, i_val in enumerate(j_vals):
+            rows.append((j_key, i, i_val))
+    cons_altair_table = pd.DataFrame(rows, columns = ['Tool', 'Position', 'value'])
+    return alt.Chart(cons_altair_table).mark_line()\
+                                       .encode(x='Position:N', y='value:Q', color='Tool:O')\
+                                       .properties(width=400, height=125)\
+                                       .facet('Tool:O', columns=1)\
+                                       .resolve_scale(x='independent', y='independent')
+
 

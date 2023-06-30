@@ -289,8 +289,10 @@ def sorf_table(sorf_excel_df):
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
             with col2:
-                de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-                st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
+
+                if len(xena_overlap) > 0:
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
@@ -408,12 +410,12 @@ def main():
         "sORF Table": sorf_table,
         "sORF Transcriptome Atlas": sorf_transcriptome_atlas,
         "sORF Genome Browser": genome_browser,
-        "sORF Selector": selector,
+        # "sORF Selector": selector,
     }
     
     sorf_excel_df = load_sorf_excel()
   
-    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
         sorf_table(sorf_excel_df)
@@ -424,8 +426,8 @@ def main():
     with tab3:
         genome_browser()
         
-    with tab4:
-        selector(sorf_excel_df)
+    # with tab4:
+    #     selector(sorf_excel_df)
 
 
 if __name__ == "__main__":
