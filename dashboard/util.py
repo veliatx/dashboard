@@ -5,8 +5,8 @@ from pandas.api.types import (
     is_object_dtype,
 )
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -87,6 +87,7 @@ def ucsc_link(chrom, start, end):
     position = f"{chrom}:{start}-{end}"
     ucsc_link = f"{base_link}{genome}&position={position}"
     return ucsc_link
+
 
 def convert_list_string(x):
     l = list(map(float, x.strip('][').split(',')))

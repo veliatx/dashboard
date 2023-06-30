@@ -1,31 +1,26 @@
-import streamlit as st
-import numpy as np
-from streamlit_plotly_events import plotly_events
-import plotly.express as px
-from plotly import graph_objects as go
-import matplotlib.pyplot as plt
-import pandas as pd
-from collections import defaultdict
-from st_aggrid import AgGrid, GridUpdateMode
-from st_aggrid.grid_options_builder import GridOptionsBuilder
-import streamlit_scrollable_textbox as stx
-# import seaborn_altair as salt
-import seaborn as sns
 import json
 import jsonlines
+import os
 import py3Dmol
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+import streamlit.components.v1 as components
+import streamlit_scrollable_textbox as stx
+
+from collections import defaultdict
+from streamlit_plotly_events import plotly_events
+from tqdm import tqdm
 
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
+from dashboard import plotting
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
-from dashboard import plotting
-
-import os
-import altair as alt
-from tqdm import tqdm
-import streamlit.components.v1 as components
 
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
@@ -201,6 +196,7 @@ def load_phylocsf_data():
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
     return pcsf
 
+
 @st.cache_data()
 def convert_df(df):
     return df.to_csv().encode('utf-8')
@@ -230,6 +226,13 @@ def sorf_table(sorf_excel_df):
         df,
         column_config={
             'vtx_id': st.column_config.TextColumn(disabled=True),
+            'primary_id': st.column_config.TextColumn(disabled=True),
+            'genscript_id': st.column_config.TextColumn(disabled=True),
+            'phase': st.column_config.TextColumn(disabled=True),
+            'orf_xref': st.column_config.TextColumn(disabled=True),
+            'protein_xrefs': st.column_config.TextColumn(disabled=True),
+            'gene_xref': st.column_config.TextColumn(disabled=True),
+
         },
         key='data_editor'
     )
@@ -267,26 +270,39 @@ def sorf_table(sorf_excel_df):
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         
-
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
 
             with col1:
+
+                option, events = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                
+                if option:
+                    value = st_echarts(option, height="1000px", events=events)
+                    
+
                 # Plot transcript expression levels
-                fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
-                if fig:
-                    st.pyplot(fig)
+                #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                #if fig:
+                #    st.pyplot(fig)
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+
             with col2:
-            # with st.container():
+
                 if len(xena_overlap) > 0:
                     de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-                    st_echarts(options=de_exact_echarts_options_b, key='b', height='300px', width = '600px')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
+            if value:
+                st.write(value)
 
+                xena_vtx_exp_df = xena_metadata.merge(xena_expression, left_index=True, right_index=True)
+                fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
+                st.plotly_chart(fig, use_container_width=True)
+                
         with st.expander("Protein Structure and Function", expanded=True):
             col3, col4 = st.columns(2)
 
@@ -306,7 +322,7 @@ def sorf_table(sorf_excel_df):
                 view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
                 view.zoomTo()
                 st.header('sORF ESMfold')
-                components.html(view._make_html(), height=500, width=700)
+                components.html(view._make_html(), height=500, width=600)
                 
             f = protein_features_df[vtx_id]
             imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
@@ -328,16 +344,23 @@ def sorf_table(sorf_excel_df):
                     long_text+=hit_text
                     long_text+= h['alignment'] + '  \n  \n'
     
-            stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
+            stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
 
 
 def sorf_transcriptome_atlas(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
-    data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
-
     with st.container():
         col1, col2, col3 = st.columns(3)
+        with col1:
+            tx_type = st.radio("sORF to transcript mapping",
+                               ('Boundary Overlap', 'Exact Overlap'))
+            
+            if tx_type == 'Boundary Overlap':
+                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+            else:
+                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+
         with col2:
             values = st.slider(
                 'Select Tissue Specificity Tau',
@@ -407,7 +430,5 @@ def main():
     #     selector(sorf_excel_df)
 
 
-# Run the app
 if __name__ == "__main__":
-
     main()
