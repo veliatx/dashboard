@@ -7,6 +7,7 @@ import seaborn as sns
 import streamlit as st
 
 from plotly import graph_objects as go
+from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 
 
@@ -213,9 +214,22 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
     grouped_exp_df = selected_expression.groupby(groups).median()
     
-    col_map = {x: i for i,x in enumerate(grouped_exp_df.columns)}
-    row_map = {x: i for i,x in enumerate(grouped_exp_df.index)}
-    data = [(col_map[k[1]], row_map[k[0]], v) for k,v in grouped_exp_df.stack().items()]
+    if grouped_exp_df.shape[1] == 0:
+        return None, None
+
+    row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
+    col_clusters = linkage(grouped_exp_df.values, method='complete', metric='euclidean')
+
+    # compute the leaves order
+    row_leaves = leaves_list(row_clusters)
+    col_leaves = leaves_list(col_clusters)
+
+    # reorder the DataFrame according to the clusters
+    plot_df = grouped_exp_df.T.iloc[row_leaves, col_leaves]
+
+    col_map = {x: i for i,x in enumerate(plot_df.columns)}
+    row_map = {x: i for i,x in enumerate(plot_df.index)}
+    data = [(row_map[k[0]], col_map[k[1]], v) for k,v in plot_df.stack().items()]
     
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
@@ -224,6 +238,13 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     #                     cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
     
     js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
+    
+    updated_row_names = []
+    for r in row_names:
+        if r in selected_transcripts_exact:
+            updated_row_names.append(f'**{r}')
+        else:
+            updated_row_names.append(r)
 
     option = {
         "tooltip": {
@@ -231,16 +252,16 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
         },
         "xAxis": {
             "type": "category", 
-            "data": col_names, 
+            "data": updated_row_names, 
             "axisLabel": {
                 "fontSize": 10,
                 "rotate": -90,
-                "interval": 1,
+                "interval": 0,
             }
             },
         "yAxis": {
             "type": "category", 
-            "data": row_names,
+            "data": col_names,
             "axisLabel": {
                 "fontSize": 10,
                 "width": 0,
@@ -267,17 +288,20 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
                 ]
             },
             "orient": 'vertical',
-            "left": '95%',
+            "left": '90%',
             "top": 'center'
         },
         "grid": {
-            "left": '20%',
+            "left": '30%',
+            "bottom": '10%'
         },
         "series": [
             {
                 "name": "Log2(TPM+1)",
                 "type": "heatmap",
                 "data": data,
+                "borderColor": '#333',
+                "borderWidth": 1,
                 "emphasis": {
                     "itemStyle": {
                         "borderColor": '#333',
@@ -290,6 +314,17 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
                 "animation": False,
             }
         ],
+        'markLine': {
+            'silent': True,
+            'lineStyle': {
+                'color': 'black',
+                'width': 2,
+                'type': 'solid',
+            },
+            'data': [
+                {'xAxis': selected_transcripts_exact},  # Replace '3a' with your desired x-axis label
+            ],
+        },
     }
     
     events = {
@@ -298,7 +333,6 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     }
 
     return option, events
-
 
 
 def expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict):

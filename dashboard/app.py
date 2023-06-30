@@ -275,11 +275,12 @@ def sorf_table(sorf_excel_df):
 
             with col1:
 
-                option, events, = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                option, events = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
                 
                 if option:
                     value = st_echarts(option, height="1000px", events=events)
                     st.write(value)
+                
 
                 # Plot transcript expression levels
                 #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
@@ -314,7 +315,7 @@ def sorf_table(sorf_excel_df):
                 view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
                 view.zoomTo()
                 st.header('sORF ESMfold')
-                components.html(view._make_html(), height=500, width=700)
+                components.html(view._make_html(), height=500, width=600)
                 
             f = protein_features_df[vtx_id]
             imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
@@ -336,7 +337,7 @@ def sorf_table(sorf_excel_df):
                     long_text+=hit_text
                     long_text+= h['alignment'] + '  \n  \n'
     
-            stx.scrollableTextbox(long_text,height = 300, fontFamily='Courier')
+            stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
 
 
 def sorf_transcriptome_atlas(sorf_excel_df):
