@@ -35,6 +35,8 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
 
 
 def plot_vtx_transcripts_heatmap(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
+    """
+    """
     selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
     selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
     selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
@@ -82,6 +84,8 @@ def expression_de_to_echarts_data(expression_values, de_values, color):
 
 
 def bar_plot_expression_groups(dataframe, group_name, group_members, title):
+    """
+    """
     if dataframe.shape[0]>0:
         dataframe = dataframe.copy()
         new_df = pd.DataFrame()
@@ -208,9 +212,6 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
-
-    #fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
-    #                     cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
     
     js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
     
@@ -223,7 +224,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
 
     option = {
         "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> TPM: ' + params.data[2];}").js_code,
         },
         "xAxis": {
             "type": "category", 
@@ -458,6 +459,8 @@ def expression_vtx_boxplot(vtx_id, expression_df):
 
 
 def format_protein_feature_strings_for_altair_heatmap(orf_features):
+    """
+    """
     # orf_features = orf_string_table.T[vtx_id]
     orf_features = orf_features.T
     orf_features = orf_features.apply(lambda x: [*x])
@@ -471,6 +474,8 @@ def format_protein_feature_strings_for_altair_heatmap(orf_features):
 
 
 def altair_protein_features_plot(df):
+    """
+    """
     color_dict = {
         'S': 'palegoldenrod',
         'C': 'lightgray',
