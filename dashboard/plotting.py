@@ -319,7 +319,7 @@ def expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict):
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  tids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_normal['condition'] = 'GTEx'
-    de = pd.DataFrame([de_tables_dict[tid]['padj']<0.001 for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.0001) and (np.abs(de_tables_dict[tid]['log2FoldChange'])>2) for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0)
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]

@@ -253,6 +253,7 @@ def sorf_table(sorf_excel_df):
     kibby = load_kibby_results(sorf_excel_df)
     protein_features_df = load_protein_feature_string_representations()
     phylocsf_dataframe = load_phylocsf_data()
+    xena_overlap = []
 
     if 'curr_vtx_id' in st.session_state.keys():
 
@@ -296,7 +297,7 @@ def sorf_table(sorf_excel_df):
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
-            if value:
+            if (len(xena_overlap)>0) and value:
                 st.write(value)
 
                 xena_vtx_exp_df = xena_metadata.merge(xena_expression, left_index=True, right_index=True)
