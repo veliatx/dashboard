@@ -274,10 +274,17 @@ def sorf_table(sorf_excel_df):
             col1, col2 = st.columns(2)
 
             with col1:
+
+                option, events, = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                
+                if option:
+                    value = st_echarts(option, height="1000px", events=events)
+                    st.write(value)
+
                 # Plot transcript expression levels
-                fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
-                if fig:
-                    st.pyplot(fig)
+                #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                #if fig:
+                #    st.pyplot(fig)
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
@@ -335,8 +342,6 @@ def sorf_table(sorf_excel_df):
 def sorf_transcriptome_atlas(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
     
-    
-
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col1:

@@ -171,13 +171,16 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
     selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
     xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+    st.write(selected_transcripts)
+    st.write(xena_overlap)
     set2 = sns.color_palette('Set2', n_colors=2)
     if len(xena_overlap)>1:
         col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
         selected_expression = xena_expression[xena_overlap]
+        st.write(selected_expression)
         groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
         fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
-                                  cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+                             cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
         
     elif len(xena_overlap) == 1:
         st.write('Only 1 transcript')
@@ -192,6 +195,110 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
         fig = None
 
     return fig
+
+
+def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
+    """
+    """
+    # Plot transcript expression levels
+    selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+    selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+    selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
+    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+    set2 = sns.color_palette('Set2', n_colors=2)
+    
+    col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+    
+    selected_expression = xena_expression[xena_overlap]
+    groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+    grouped_exp_df = selected_expression.groupby(groups).median()
+    
+    col_map = {x: i for i,x in enumerate(grouped_exp_df.columns)}
+    row_map = {x: i for i,x in enumerate(grouped_exp_df.index)}
+    data = [(col_map[k[1]], row_map[k[0]], v) for k,v in grouped_exp_df.stack().items()]
+    
+    col_names = list(col_map.keys())
+    row_names = list(row_map.keys())
+
+    #fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
+    #                     cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
+    
+    js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
+
+    option = {
+        "tooltip": {
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
+        },
+        "xAxis": {
+            "type": "category", 
+            "data": col_names, 
+            "axisLabel": {
+                "fontSize": 10,
+                "rotate": -90,
+                "interval": 1,
+            }
+            },
+        "yAxis": {
+            "type": "category", 
+            "data": row_names,
+            "axisLabel": {
+                "fontSize": 10,
+                "width": 0,
+                "interval": 0,
+            } 
+            },
+        "visualMap": {
+            "min": 0,
+            "max": grouped_exp_df.max().max(),
+            "calculable": True,
+            "realtime": False,
+            "inRange": {
+                "color": [
+                    '#5782bc', 
+                    '#7e9ac2', 
+                    '#a3b4cd', 
+                    '#cad0dd', 
+                    '#efeef1', 
+                    '#f7eae8', 
+                    '#e6c5c3', 
+                    '#d7a09d', 
+                    '#c87e7b', 
+                    '#b95b5a'
+                ]
+            },
+            "orient": 'vertical',
+            "left": '95%',
+            "top": 'center'
+        },
+        "grid": {
+            "left": '20%',
+        },
+        "series": [
+            {
+                "name": "Log2(TPM+1)",
+                "type": "heatmap",
+                "data": data,
+                "emphasis": {
+                    "itemStyle": {
+                        "borderColor": '#333',
+                        "borderWidth": 1,
+                        "shadowBlur": 10,
+                        "shadowColor": 'rgba(0, 0, 0, 0.5)'
+                    }
+                },
+                "progressive": 1000,
+                "animation": False,
+            }
+        ],
+    }
+    
+    events = {
+        "click": "function(params) { console.log(params.name); return params.name }",
+        "dblclick": "function(params) { return [params.type, params.name, params.value] }"
+    }
+
+    return option, events
+
 
 
 def expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict):
