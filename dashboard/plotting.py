@@ -26,7 +26,9 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_normal['condition'] = 'GTEx'
-    de = pd.DataFrame([de_tables_dict[tid]['padj']<0.00001 for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    #de = pd.DataFrame([de_tables_dict[tid]['padj']<0.00001 for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.000001) & (np.abs(de_tables_dict[tid]['log2FC'])>2) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
@@ -195,16 +197,18 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     
     if grouped_exp_df.shape[1] == 0:
         return None, None
+    elif grouped_exp_df.shape[1] == 1:
+        plot_df = grouped_exp_df.T
+    else:
+        row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
+        col_clusters = linkage(grouped_exp_df.values, method='complete', metric='euclidean')
 
-    row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
-    col_clusters = linkage(grouped_exp_df.values, method='complete', metric='euclidean')
+        # compute the leaves order
+        row_leaves = leaves_list(row_clusters)
+        col_leaves = leaves_list(col_clusters)
 
-    # compute the leaves order
-    row_leaves = leaves_list(row_clusters)
-    col_leaves = leaves_list(col_clusters)
-
-    # reorder the DataFrame according to the clusters
-    plot_df = grouped_exp_df.T.iloc[row_leaves, col_leaves]
+        # reorder the DataFrame according to the clusters
+        plot_df = grouped_exp_df.T.iloc[row_leaves, col_leaves]
 
     col_map = {x: i for i,x in enumerate(plot_df.columns)}
     row_map = {x: i for i,x in enumerate(plot_df.index)}
@@ -224,7 +228,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
 
     option = {
         "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> TPM: ' + params.data[2];}").js_code,
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
         },
         "xAxis": {
             "type": "category", 
@@ -309,34 +313,6 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
     }
 
     return option, events
-
-
-def expression_de_plot(vtx_id, vtx_id_to_transcripts, de_tables_dict):
-    """
-    """
-    tids = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-    sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-    sum_expression_cancer['condition'] = 'Cancer'
-    sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  tids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-    sum_expression_normal['condition'] = 'GTEx'
-    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.0001) and (np.abs(de_tables_dict[tid]['log2FoldChange'])>2) for tid in tids if len(de_tables_dict[tid])>0]).sum(axis=0)
-    result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
-    result['TCGA'] = result.index
-    result['# DE Transcripts'] = [de.loc[i] for i in result.index]
-
-    # Define the bar plot using Altair
-    fig = px.bar(result, y='TCGA', x='Sum', color='condition', barmode='group')
-    fig.add_trace(go.Scatter(
-        y=result['TCGA'],
-        x=result['Sum'],
-        mode="text",
-        name="# DE Transcripts",
-        text=result['# DE Transcripts'],
-        textposition="top left",
-        showlegend=False
-    ))
-
-    return fig, result
 
 
 def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values):

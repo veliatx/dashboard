@@ -72,7 +72,7 @@ def load_de_results(transcripts):
     de_tables_dict = defaultdict(dict)
     for c, df in tqdm(temp_dict.items()):
         for row in df.itertuples():
-            de_tables_dict[row[0]][c] = {'Cancer Average': row._7, 'GTEx Average': row._8, 
+            de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
     for t, d in de_tables_dict.items():
         de_tables_dict[t] = pd.DataFrame(d).T
@@ -203,8 +203,8 @@ def convert_df(df):
 
 
 def sorf_table(sorf_excel_df):
-    st.title('sORF Library')
-    st.write('Table contains secreted sORFs.')
+    st.title('sORF Table')
+    st.write('Table contains library of secreted sORFs.')
 
     df = filter_dataframe(sorf_excel_df)
 
@@ -270,7 +270,8 @@ def sorf_table(sorf_excel_df):
         selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-        
+        value = None
+
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
 
@@ -292,7 +293,7 @@ def sorf_table(sorf_excel_df):
             with col2:
 
                 if len(xena_overlap) > 0:
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression ~TPM')
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
@@ -397,7 +398,7 @@ def selector(sorf_excel_df):
 def genome_browser():
     """
     """
-    components.iframe("http://10.65.23.159:8080/velia_collections.html", height=1200, scrolling=True)
+    components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
 
 
 def main():
