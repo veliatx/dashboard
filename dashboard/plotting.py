@@ -233,6 +233,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
             updated_row_names.append(r)
 
     option = {
+        "title": {"text": "Transcript Specific Expression"},
         "tooltip": {
             "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
         },
@@ -300,17 +301,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
                 "animation": False,
             }
         ],
-        'markLine': {
-            'silent': True,
-            'lineStyle': {
-                'color': 'black',
-                'width': 2,
-                'type': 'solid',
-            },
-            'data': [
-                {'xAxis': selected_transcripts_exact},  # Replace '3a' with your desired x-axis label
-            ],
-        },
+
     }
     
     events = {

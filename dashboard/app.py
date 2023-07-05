@@ -281,22 +281,25 @@ def sorf_table(sorf_excel_df):
                 
                 if option:
                     value = st_echarts(option, height="1000px", events=events)
-
-                # Plot transcript expression levels
-                #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
-                #if fig:
-                #    st.pyplot(fig)
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
             with col2:
 
                 if len(xena_overlap) > 0:
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+
+                    if value:
+                        if value.startswith('**'):
+                            selected_transcript = [value[2:]]
+                        else:
+                            selected_transcript = [value]
+
+                    elif selected_transcripts.shape[0]:
+                        selected_transcript = [xena_overlap[0]]
+
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, de_tables_dict, 'Differential Expression')
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
                 
-                # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
-                # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
             if (len(xena_overlap)>0) and value:
                 st.write(value)
 
