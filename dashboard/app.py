@@ -279,7 +279,6 @@ def sorf_table(sorf_excel_df):
                 
                 if option:
                     value = st_echarts(option, height="1000px", events=events)
-                    
 
                 # Plot transcript expression levels
                 #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
@@ -292,7 +291,7 @@ def sorf_table(sorf_excel_df):
 
                 if len(xena_overlap) > 0:
                     de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
-                    st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
                 # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
