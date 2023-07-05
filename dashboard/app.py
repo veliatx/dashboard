@@ -76,7 +76,11 @@ def load_de_results(transcripts):
                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
     for t, d in de_tables_dict.items():
         de_tables_dict[t] = pd.DataFrame(d).T
-    return de_tables_dict
+
+    de_metadata = pd.read_csv('../data/cancer_types.txt', names=['tcga_name', 'tcga_code'])
+    de_metadata['tcga_code'] = de_metadata.apply(lambda x: x.tcga_code.strip(), axis=1)
+    de_metadata.set_index('tcga_code', inplace=True)
+    return de_tables_dict, de_metadata
 
 
 @st.cache_data()
@@ -114,13 +118,13 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
     xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
     xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
-    de_tables_dict = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
-    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict
+    de_tables_dict, de_metadata = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
+    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict, de_metadata
 
 
 @st.cache_data()
 def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
-    xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target(vtx_combination_type)
+    xena_metadata_df, _, _, xena_vtx_sum_df, _, _ = load_xena_tcga_gtex_target(vtx_combination_type)
     
     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
 
@@ -247,7 +251,7 @@ def sorf_table(sorf_excel_df):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, _, de_tables_dict, de_metadata = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
@@ -276,8 +280,8 @@ def sorf_table(sorf_excel_df):
             col1, col2 = st.columns(2)
 
             with col1:
-
-                option, events = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                title = f'Transcript Specific Expression - {vtx_id}'
+                option, events = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title)
                 
                 if option:
                     value = st_echarts(option, height="1000px", events=events)
@@ -297,8 +301,13 @@ def sorf_table(sorf_excel_df):
                     elif selected_transcripts.shape[0]:
                         selected_transcript = [xena_overlap[0]]
 
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, de_tables_dict, 'Differential Expression')
+                    chart_title = f'Differential Expression - {selected_transcript[0]}'
+
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
+                                                                                                           de_tables_dict, de_metadata,
+                                                                                                           chart_title)
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
+                    
                 
             if (len(xena_overlap)>0) and value:
                 st.write(value)

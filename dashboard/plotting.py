@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import seaborn as sns
+import simplejson as json
 import streamlit as st
 
 from plotly import graph_objects as go
@@ -11,7 +12,7 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 
 
-def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, title):
+def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, de_metadata, title):
     """
     Parameters
     ----------
@@ -26,44 +27,13 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_normal['condition'] = 'GTEx'
-    #de = pd.DataFrame([de_tables_dict[tid]['padj']<0.00001 for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
-    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.000001) & (np.abs(de_tables_dict[tid]['log2FC'])>2) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.00001) & (np.abs(de_tables_dict[tid]['log2FC'])>1) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
 
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
     # Define the bar plot using plotly express
-    return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], title)
-
-
-def plot_vtx_transcripts_heatmap(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
-    """
-    """
-    selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-    selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
-    selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-    set2 = sns.color_palette('Set2', n_colors=2)
-    if len(xena_overlap)>1:
-        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-        selected_expression = xena_expression[xena_overlap]
-        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-        heatmap_figure = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
-                                cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-    elif len(xena_overlap) == 1:
-        # st.write('Only 1 transcript')
-        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-        selected_expression = xena_expression[list(xena_overlap)]
-        # selected_expression['Null'] = -1
-        # col_colors.append(set2[1])
-        print(selected_expression.shape, col_colors)
-        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-        heatmap_figure, ax = plt.subplots()
-        sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
-                                cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-    else:
-        return 'No transcripts in TCGA/GTEx/TARGET found containing this sORF'
-    return heatmap_figure
+    return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
 
 
 def expression_de_to_echarts_data(expression_values, de_values, color):
@@ -85,7 +55,7 @@ def expression_de_to_echarts_data(expression_values, de_values, color):
     return data
 
 
-def bar_plot_expression_groups(dataframe, group_name, group_members, title):
+def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata, title):
     """
     """
     if dataframe.shape[0]>0:
@@ -98,10 +68,24 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
         dataframe = new_df.copy()
     else:
         return None
+    
+    dataframe.sort_values(by='Cancer', inplace=True)
+
+    #js_col_names = "var cols = {" + ",".join([f"'{c}'" for c in col_names]) + "];"
+
     option = {
       'title': {'text': title},
-      'tooltip': {'trigger': 'axis'},
-      'legend': {'data': group_members},
+      'tooltip': {
+          "trigger": 'axis',
+          #"formatter": JsCode("function (params) {console.log(params)}").js_code,
+          "formatter": JsCode("function (params) {var cols = " + json.dumps(de_metadata.to_dict()['tcga_name']) + "; console.log(cols); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+      },
+      'legend': {
+          'data': group_members,
+          'orient': 'vertical',
+          'right': -5,
+          'top': 'center'
+          },
       'toolbox': {
         'show': True,
         'feature': {
@@ -122,7 +106,7 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
         }
       ],
       'xAxis': [
-        {'name': 'Approximate TPM',
+        {'name': 'Approximate TPM \n (Transcripts in bold are DE with FDR < 1e-5 and abs(LFC) > 1)',
          'nameLocation': 'middle',
          'nameGap': 30,
          'type': 'value'}
@@ -143,49 +127,15 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
     'grid': {
           'left': 70,
           'top': 50,
-          'right': 50,
-          'bottom': 50
+          'right': 120,
+          'bottom': 80
         }
     }
 
     return option
 
 
-def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
-    """
-    """
-    # Plot transcript expression levels
-    selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-    selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
-    selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-    st.write(selected_transcripts)
-    st.write(xena_overlap)
-    set2 = sns.color_palette('Set2', n_colors=2)
-    if len(xena_overlap)>1:
-        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-        selected_expression = xena_expression[xena_overlap]
-        st.write(selected_expression)
-        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-        fig = sns.clustermap(selected_expression.groupby(groups).median(), col_colors=col_colors,
-                             cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-        
-    elif len(xena_overlap) == 1:
-        st.write('Only 1 transcript')
-        col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
-        selected_expression = xena_expression[list(xena_overlap)]
-        print(selected_expression.shape, col_colors)
-        groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-        fig, ax = plt.subplots()
-        sns.heatmap(selected_expression.groupby(groups).median(), ax=ax,
-                                  cmap='coolwarm', cbar_kws={'label': 'Log(TPM+0.001)'}, center=1, vmin=-3, vmax=6)
-    else:
-        fig = None
-
-    return fig
-
-
-def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata):
+def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title):
     """
     """
     # Plot transcript expression levels
@@ -205,6 +155,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
         return None, None
     elif grouped_exp_df.shape[1] == 1:
         plot_df = grouped_exp_df.T
+        plot_df.sort_values(by=xena_overlap[0], inplace=True)
     else:
         row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
         col_clusters = linkage(grouped_exp_df.values, method='complete', metric='euclidean')
@@ -233,7 +184,7 @@ def expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xen
             updated_row_names.append(r)
 
     option = {
-        "title": {"text": "Transcript Specific Expression"},
+        "title": {"text": title},
         "tooltip": {
             "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
         },
