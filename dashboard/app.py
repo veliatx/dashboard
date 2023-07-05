@@ -292,7 +292,7 @@ def sorf_table(sorf_excel_df):
             with col2:
 
                 if len(xena_overlap) > 0:
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression ~TPM')
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
@@ -401,11 +401,12 @@ def genome_browser():
 
 
 def main():
-    #st.sidebar.title("Navigation")
     
     st.set_page_config(layout="wide")
     st.markdown(""" <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """, unsafe_allow_html=True)
-
+    with open("style.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    
     # Define a dictionary with the page names and corresponding functions
     pages = {
         "sORF Table": sorf_table,

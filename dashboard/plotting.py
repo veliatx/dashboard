@@ -122,7 +122,10 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, title):
         }
       ],
       'xAxis': [
-        {'type': 'value'}
+        {'name': 'Approximate TPM',
+         'nameLocation': 'middle',
+         'nameGap': 30,
+         'type': 'value'}
       ],
         'color': ['#237c94', '#d62418'],
       'series': [
