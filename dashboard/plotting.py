@@ -10,6 +10,7 @@ import streamlit as st
 from plotly import graph_objects as go
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
+import streamlit.components.v1 as components
 
 
 def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, de_metadata, title):
