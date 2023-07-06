@@ -6,6 +6,7 @@ import plotly.express as px
 import seaborn as sns
 import simplejson as json
 import streamlit as st
+import streamlit.components.v1 as components
 
 from plotly import graph_objects as go
 from scipy.cluster.hierarchy import linkage, leaves_list
@@ -228,6 +229,14 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
             "orient": 'vertical',
             "left": '90%',
             "top": 'center'
+        },
+        'toolbox': {
+            'show': True,
+            'feature': {
+                'dataView': { 'show': True, 'readOnly': False },
+                'restore': { 'show': True },
+                'saveAsImage': { 'show': True }
+            }
         },
         "grid": {
             "left": '30%',

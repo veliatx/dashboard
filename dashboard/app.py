@@ -284,7 +284,7 @@ def sorf_table(sorf_excel_df):
                 option, events = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title)
                 
                 if option:
-                    value = st_echarts(option, height="1000px", events=events)
+                    value = st_echarts(option, height="1000px", events=events, renderer='svg')
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
@@ -306,7 +306,7 @@ def sorf_table(sorf_excel_df):
                     de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
                                                                                                            de_tables_dict, de_metadata,
                                                                                                            chart_title)
-                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
                     
                 
             if (len(xena_overlap)>0) and value:
@@ -409,6 +409,7 @@ def selector(sorf_excel_df):
 def genome_browser():
     """
     """
+    #plotting.render_igv_html()
     components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
 
 
