@@ -18,7 +18,7 @@ from tqdm import tqdm
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
-from dashboard import plotting
+from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
 
@@ -49,6 +49,12 @@ def load_sorf_excel():
 
     sorf_excel_df = sorf_excel_df[cols]
     return sorf_excel_df
+@st.cache_data()
+def load_tcga_gtex_tissue_pairs():
+    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
+    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA', 'GTEx']).copy()
+    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA']
+    return tcga_gtex_tissue_metadata
 
 
 @st.cache_data()
@@ -248,6 +254,7 @@ def sorf_table(sorf_excel_df):
 
     # Load data
     xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
+    tcga_gtex_tissue_metadata = load_tcga_gtex_tissue_pairs()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
@@ -292,7 +299,7 @@ def sorf_table(sorf_excel_df):
             with col2:
 
                 if len(xena_overlap) > 0:
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, 'Expression')
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, tcga_gtex_tissue_metadata, 'Expression')
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
                 
                 # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
@@ -318,21 +325,25 @@ def sorf_table(sorf_excel_df):
                         
             with col4:
                 structure = esmfold[sorf_aa_seq]['pdb']
+                modified_structure_colors = plotting.color_protein_terminal_ends(sorf_aa_seq, structure)
                 view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-                view.addModel(structure, 'pdb')
+                view.addModel(modified_structure_colors, 'pdb')
                 view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
                 view.zoomTo()
-                st.header('sORF ESMfold')
+                st.header('sORF ESMfold', help="Red - Low Confidence  \nBlue - High Confidence  \nConfidence is based on plDDT score from ESMFold  \nN-term is blue and C-term is red")
+                # st.text('Red - Low confidence')
+                # st.text('Blue - High confidence')
+                # st.text('N-term is blue and C-term is red')
                 components.html(view._make_html(), height=500, width=600)
                 
             f = protein_features_df[vtx_id]
             imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
             altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)
+            st.header('AA Feature Predictions', help=description.amino_acid_features_hover_text)
             st.altair_chart(altair_signal_features_fig, use_container_width=True)
 
         
         with st.expander("BLASTp results", expanded=True):
-
             # Blastp Mouse
             primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
             blastp_results_selected_sorf = blastp_mouse_hits[primary_id]

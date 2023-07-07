@@ -10,8 +10,26 @@ from plotly import graph_objects as go
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 
+def color_protein_terminal_ends(aa_seq, pdb_string):
+    """
+    Modify pdb string to color terminal ends.
+        C-term is red, and N-term is blue.
+    aa_seq : str
+        Amino acid sequence
+    pdb_string : str
+        PDB Structure as string.
+    """
+    parts = pdb_string.split('\n')
+    for ix, line in enumerate(parts):
+        if line.startswith('ATOM'):
+            pieces = line.split()
+            if pieces[5] == '1':
+                parts[ix] = line.replace(f'1.00 {pieces[-2]}', '1.00 100.00')
+            elif pieces[5] == str(len(aa_seq)):
+                parts[ix] = line.replace(f'1.00 {pieces[-2]}', '1.00 0.00')
+    return '\n'.join(parts)
 
-def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, title):
+def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, tcga_gtex_metadata, title):
     """
     Parameters
     ----------
@@ -30,6 +48,7 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
+    result['GTEx Normal Tissue'] = tcga_gtex_metadata['GTEx']
     # Define the bar plot using plotly express
     return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], title)
 
@@ -432,23 +451,24 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
     return option, events, tissue_specific_vtx_ids
 
 
-def expression_vtx_boxplot(vtx_id, expression_df):
+def expression_vtx_boxplot(transcript_id, expression_df):
     """
     """
-    if '**' in vtx_id:
-        vtx_id = vtx_id[2:]
-        
-    df = expression_df[['primary disease or tissue', vtx_id]].copy()
+    if '**' in transcript_id:
+        transcript_id = transcript_id[2:]
+    groups = expression_df[['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis = 1)
+    df = expression_df[[transcript_id]].copy()
+    df['Sample'] = groups
     df.reset_index(inplace=True)
 
-    medians = df.groupby('primary disease or tissue')[vtx_id].median().sort_values()
+    medians = df.groupby('Sample')[transcript_id].median().sort_values()
 
     order_map = {name:i for i, name in enumerate(medians.index)}
-    df['order'] = df.apply(lambda x: order_map[x['primary disease or tissue']], axis=1)
+    df['order'] = df.apply(lambda x: order_map[x['Sample']], axis=1)
     df.sort_values(by='order', ascending=False, inplace=True)
 
-    fig = px.box(df, x="primary disease or tissue", 
-                 y=vtx_id,  
+    fig = px.box(df, x="Sample", 
+                 y=transcript_id,  
                  points='outliers', hover_data='index',
                  category_orders={''}, height=500)
     
