@@ -270,7 +270,6 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     return option, events
 
 
-#def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values, xena_vtx_sum_df):
 def expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df):
 
     """

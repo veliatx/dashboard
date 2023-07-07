@@ -402,7 +402,6 @@ def selector(sorf_excel_df):
 def genome_browser():
     """
     """
-    #plotting.render_igv_html()
     components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
 
 
