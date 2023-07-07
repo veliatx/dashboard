@@ -72,14 +72,12 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata
     
     dataframe.sort_values(by='Cancer', inplace=True)
 
-    #js_col_names = "var cols = {" + ",".join([f"'{c}'" for c in col_names]) + "];"
-
     option = {
       'title': {'text': title},
       'tooltip': {
           "trigger": 'axis',
           #"formatter": JsCode("function (params) {console.log(params)}").js_code,
-          "formatter": JsCode("function (params) {var cols = " + json.dumps(de_metadata.to_dict()['tcga_name']) + "; console.log(cols); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+          "formatter": JsCode("function (params) {var cols = " + json.dumps(de_metadata.to_dict()['tcga_name']) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
       },
       'legend': {
           'data': group_members,
@@ -272,22 +270,35 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     return option, events
 
 
-def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values):
+#def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values, xena_vtx_sum_df):
+def expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df):
+
     """
     """
     tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
-    row_df = pd.DataFrame(row_names)
+    #row_df = pd.DataFrame(row_names)
 
-    specific_df = row_df[row_df.apply(lambda x: True if x[0] in tissue_specific_vtx_ids else False, axis=1)]
-    specific_df.reset_index(inplace=True)
-    subset_data = []
+    #specific_df = row_df[row_df.apply(lambda x: True if x[0] in tissue_specific_vtx_ids else False, axis=1)]
+    #specific_df.reset_index(inplace=True)
+    xena_vtx_sum_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
 
-    for d in data:
-        if d[0] in specific_df['index'].values:
-            new_idx = int(specific_df[specific_df['index'] == d[0]].index[0])
-            subset_data.append((new_idx, d[1], d[2]))
+    # compute the clusters
+    row_clusters = linkage(xena_vtx_sum_df.T.values, method='complete', metric='euclidean')
+    col_clusters = linkage(xena_vtx_sum_df.values, method='complete', metric='euclidean')
+
+    # compute the leaves order
+    row_leaves = leaves_list(row_clusters)
+    col_leaves = leaves_list(col_clusters)
+
+    # reorder the DataFrame according to the clusters
+    plot_df = xena_vtx_sum_df.T.iloc[row_leaves, col_leaves]
+
+    col_map = {x: i for i,x in enumerate(plot_df.columns)}
+    row_map = {x: i for i,x in enumerate(plot_df.index)}
+    data = [(row_map[k[0]], col_map[k[1]], v) for k,v in plot_df.stack().items()]
     
-    row_names = list(specific_df[0])
+    col_names = list(col_map.keys())
+    row_names = list(row_map.keys())
 
     js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
 
@@ -343,7 +354,7 @@ def expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, value
             {
                 "name": "Log2(TPM+1)",
                 "type": "heatmap",
-                "data": subset_data,
+                "data": data,
                 "emphasis": {
                     "itemStyle": {
                         "borderColor": '#333',
