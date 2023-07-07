@@ -173,8 +173,9 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     if grouped_exp_df.shape[1] == 0:
         return None, None
     elif grouped_exp_df.shape[1] == 1:
-        plot_df = grouped_exp_df.T
+        plot_df = grouped_exp_df
         plot_df.sort_values(by=xena_overlap[0], inplace=True)
+        plot_df = plot_df.T
     else:
         row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
         col_clusters = linkage(grouped_exp_df.values, method='complete', metric='euclidean')
@@ -201,7 +202,9 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
             updated_row_names.append(f'**{r}')
         else:
             updated_row_names.append(r)
-
+    max_contrast = grouped_exp_df.max().max()
+    if max_contrast < 5:
+        max_contrast = 5
     option = {
         "title": {"text": title},
         "tooltip": {
@@ -226,8 +229,8 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
             } 
             },
         "visualMap": {
-            "min": 0,
-            "max": grouped_exp_df.max().max(),
+            "min": 0.25,
+            "max": max_contrast,
             "calculable": True,
             "realtime": False,
             #"inRange": {
