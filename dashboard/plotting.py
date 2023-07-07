@@ -47,7 +47,8 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_normal['condition'] = 'GTEx'
-    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.00001) & (np.abs(de_tables_dict[tid]['log2FC'])>1) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
+    
+    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.00001) & (np.abs(de_tables_dict[tid]['log2FC'])>1) & ((de_tables_dict[tid]['Cancer Average'] > 1) | (de_tables_dict[tid]['GTEx Average'] > 1)) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
 
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
