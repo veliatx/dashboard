@@ -52,7 +52,7 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
-    result['GTEx Normal Tissue'] = tcga_gtex_metadata['GTEx']
+    result['GTEx Normal Tissue'] = de_metadata['GTEx']
     # Define the bar plot using plotly express
     return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
 
@@ -91,13 +91,13 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata
         return None
     
     dataframe.sort_values(by='Cancer', inplace=True)
-
+    tcga_code_to_description = de_metadata[['Description', 'GTEx']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
     option = {
       'title': {'text': title},
       'tooltip': {
           "trigger": 'axis',
           #"formatter": JsCode("function (params) {console.log(params)}").js_code,
-          "formatter": JsCode("function (params) {var cols = " + json.dumps(de_metadata.to_dict()['tcga_name']) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+          "formatter": JsCode("function (params) {var cols = " + json.dumps(tcga_code_to_description) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
       },
       'legend': {
           'data': group_members,
