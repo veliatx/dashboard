@@ -144,25 +144,8 @@ def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
     tau.name = 'tau'
     xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
 
-    # compute the clusters
-    row_clusters = linkage(xena_vtx_sum_df.T.values, method='complete', metric='euclidean')
-    col_clusters = linkage(xena_vtx_sum_df.values, method='complete', metric='euclidean')
-
-    # compute the leaves order
-    row_leaves = leaves_list(row_clusters)
-    col_leaves = leaves_list(col_clusters)
-
-    # reorder the DataFrame according to the clusters
-    plot_df = xena_vtx_sum_df.T.iloc[row_leaves, col_leaves]
-
-    col_map = {x: i for i,x in enumerate(plot_df.columns)}
-    row_map = {x: i for i,x in enumerate(plot_df.index)}
-    data = [(row_map[k[0]], col_map[k[1]], v) for k,v in plot_df.stack().items()]
-    
-    col_names = list(col_map.keys())
-    row_names = list(row_map.keys())
-
-    return data, col_names, row_names, xena_tau_df, xena_vtx_exp_df
+    #return data, col_names, row_names, xena_tau_df, xena_vtx_sum_df
+    return xena_tau_df, xena_vtx_sum_df
 
 
 @st.cache_data()
@@ -284,7 +267,7 @@ def sorf_table(sorf_excel_df):
                 option, events = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title)
                 
                 if option:
-                    value = st_echarts(option, height="1000px", events=events)
+                    value = st_echarts(option, height="1000px", events=events, renderer='svg')
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
@@ -306,7 +289,7 @@ def sorf_table(sorf_excel_df):
                     de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
                                                                                                            de_tables_dict, de_metadata,
                                                                                                            chart_title)
-                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px')
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
                     
                 
             if (len(xena_overlap)>0) and value:
@@ -370,9 +353,10 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                                ('Boundary Overlap', 'Exact Overlap'))
             
             if tx_type == 'Boundary Overlap':
-                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+                xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+
             else:
-                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+                xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
 
         with col2:
             values = st.slider(
@@ -380,8 +364,8 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                 0.0, 1.0, (.8, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
         
-        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values)
-        
+        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_exp_df)
+
         display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
         if value:
@@ -392,8 +376,17 @@ def sorf_transcriptome_atlas(sorf_excel_df):
             st.plotly_chart(fig, use_container_width=True)
 
         df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
+        exp_df = xena_vtx_exp_df[tissue_vtx_ids].copy()
+        df = df.merge(exp_df.T, left_on='vtx_id', right_index=True)
         st.header('Tissue specific sORFs')
         st.dataframe(df)
+
+        st.download_button(
+            label="Download as CSV",
+            data=convert_df(df),
+            file_name='sorf_atlas_selection.csv',
+            mime='text/csv',
+        )
            
 
 def selector(sorf_excel_df):
