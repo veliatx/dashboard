@@ -144,8 +144,7 @@ def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
     tau.name = 'tau'
     xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
 
-    #return data, col_names, row_names, xena_tau_df, xena_vtx_sum_df
-    return xena_tau_df, xena_vtx_sum_df
+    return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
 
 
 @st.cache_data()
@@ -353,10 +352,10 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                                ('Boundary Overlap', 'Exact Overlap'))
             
             if tx_type == 'Boundary Overlap':
-                xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap()
 
             else:
-                xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
 
         with col2:
             values = st.slider(
@@ -364,7 +363,7 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                 0.0, 1.0, (.8, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
         
-        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_exp_df)
+        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df)
 
         display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
