@@ -49,13 +49,6 @@ def load_sorf_excel():
 
     sorf_excel_df = sorf_excel_df[cols]
     return sorf_excel_df
-@st.cache_data()
-def load_tcga_gtex_tissue_pairs():
-    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
-    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA', 'GTEx']).copy()
-    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA']
-    return tcga_gtex_tissue_metadata
-
 
 @st.cache_data()
 def load_kibby_results(sorf_excel):
@@ -78,11 +71,14 @@ def load_de_results(transcripts):
     de_tables_dict = defaultdict(dict)
     for c, df in tqdm(temp_dict.items()):
         for row in df.itertuples():
-            de_tables_dict[row[0]][c] = {'Cancer Average': row._7, 'GTEx Average': row._8, 
+            de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
     for t, d in de_tables_dict.items():
         de_tables_dict[t] = pd.DataFrame(d).T
-    return de_tables_dict
+    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
+    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA', 'GTEx']).copy()
+    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA']
+    return de_tables_dict, tcga_gtex_tissue_metadata
 
 
 @st.cache_data()
@@ -120,13 +116,13 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
     xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
     xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
-    de_tables_dict = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
-    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict
+    de_tables_dict, de_metadata = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
+    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict, de_metadata
 
 
 @st.cache_data()
 def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
-    xena_metadata_df, xena_exp_df, _, xena_vtx_sum_df, _ = load_xena_tcga_gtex_target(vtx_combination_type)
+    xena_metadata_df, _, _, xena_vtx_sum_df, _, _ = load_xena_tcga_gtex_target(vtx_combination_type)
     
     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
 
@@ -146,25 +142,7 @@ def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
     tau.name = 'tau'
     xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
 
-    # compute the clusters
-    row_clusters = linkage(xena_vtx_sum_df.T.values, method='complete', metric='euclidean')
-    col_clusters = linkage(xena_vtx_sum_df.values, method='complete', metric='euclidean')
-
-    # compute the leaves order
-    row_leaves = leaves_list(row_clusters)
-    col_leaves = leaves_list(col_clusters)
-
-    # reorder the DataFrame according to the clusters
-    plot_df = xena_vtx_sum_df.T.iloc[row_leaves, col_leaves]
-
-    col_map = {x: i for i,x in enumerate(plot_df.columns)}
-    row_map = {x: i for i,x in enumerate(plot_df.index)}
-    data = [(row_map[k[0]], col_map[k[1]], v) for k,v in plot_df.stack().items()]
-    
-    col_names = list(col_map.keys())
-    row_names = list(row_map.keys())
-
-    return data, col_names, row_names, xena_tau_df, xena_vtx_exp_df
+    return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
 
 
 @st.cache_data()
@@ -209,8 +187,8 @@ def convert_df(df):
 
 
 def sorf_table(sorf_excel_df):
-    st.title('sORF Library')
-    st.write('Table contains secreted sORFs.')
+    st.title('sORF Table')
+    st.write('Table contains library of secreted sORFs.')
 
     df = filter_dataframe(sorf_excel_df)
 
@@ -253,8 +231,7 @@ def sorf_table(sorf_excel_df):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict = load_xena_tcga_gtex_target()
-    tcga_gtex_tissue_metadata = load_tcga_gtex_tissue_pairs()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, _, de_tables_dict, de_metadata = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
@@ -277,33 +254,39 @@ def sorf_table(sorf_excel_df):
         selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
-        
+        value = None
+
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
 
             with col1:
-
-                option, events = plotting.expression_heatmap_plot2(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
+                title = f'Transcript Specific Expression - {vtx_id}'
+                option, events = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title)
                 
                 if option:
-                    value = st_echarts(option, height="1000px", events=events)
-                    
-
-                # Plot transcript expression levels
-                #fig = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata)
-                #if fig:
-                #    st.pyplot(fig)
+                    value = st_echarts(option, height="1000px", events=events, renderer='svg')
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
 
             with col2:
 
                 if len(xena_overlap) > 0:
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(xena_overlap, de_tables_dict, tcga_gtex_tissue_metadata, 'Expression')
-                    st_echarts(options=de_exact_echarts_options_b, key='b', height='800px', width = '600px')
+                    if value:
+                        if value.startswith('**'):
+                            selected_transcript = [value[2:]]
+                        else:
+                            selected_transcript = [value]
+
+                    elif selected_transcripts.shape[0]:
+                        selected_transcript = [xena_overlap[0]]
+
+                    chart_title = f'Differential Expression - {selected_transcript[0]}'
+
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
+                                                                                                           de_tables_dict, de_metadata,
+                                                                                                           chart_title)
+                    st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
                 
-                # de_exact_echarts_options = plot_transcripts_differential_expression_barplot(xena_overlap.intersection(selected_transcripts_overlapping).difference(selected_transcripts_exact), de_tables_dict, 'Expression')
-                # st_echarts(options=de_exact_echarts_options, key='a', height='200px', width = '400px')
             if (len(xena_overlap)>0) and value:
                 st.write(value)
 
@@ -369,9 +352,10 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                                ('Boundary Overlap', 'Exact Overlap'))
             
             if tx_type == 'Boundary Overlap':
-                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap()
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap()
+
             else:
-                data, col_names, row_names, xena_tau_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
 
         with col2:
             values = st.slider(
@@ -379,8 +363,8 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                 0.0, 1.0, (.8, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
         
-        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, data, col_names, row_names, values)
-        
+        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df)
+
         display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
         if value:
@@ -391,8 +375,17 @@ def sorf_transcriptome_atlas(sorf_excel_df):
             st.plotly_chart(fig, use_container_width=True)
 
         df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
+        exp_df = xena_vtx_exp_df[tissue_vtx_ids].copy()
+        df = df.merge(exp_df.T, left_on='vtx_id', right_index=True)
         st.header('Tissue specific sORFs')
         st.dataframe(df)
+
+        st.download_button(
+            label="Download as CSV",
+            data=convert_df(df),
+            file_name='sorf_atlas_selection.csv',
+            mime='text/csv',
+        )
            
 
 def selector(sorf_excel_df):
@@ -408,15 +401,16 @@ def selector(sorf_excel_df):
 def genome_browser():
     """
     """
-    components.iframe("http://10.65.23.159:8080/velia_collections.html", height=1200, scrolling=True)
+    components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
 
 
 def main():
-    #st.sidebar.title("Navigation")
     
     st.set_page_config(layout="wide")
     st.markdown(""" <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """, unsafe_allow_html=True)
-
+    with open("style.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    
     # Define a dictionary with the page names and corresponding functions
     pages = {
         "sORF Table": sorf_table,
