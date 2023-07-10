@@ -101,35 +101,35 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
     xena_expression = xena_expression[xena_expression.columns[6:]]
 
     vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
-    # Map VTX to transcript ids - some 
-    transcript_to_vtx_id = {}
-    for ix, row in vtx_id_to_transcripts.iterrows():
-        for val in row[vtx_combination_type]:
-            transcript_to_vtx_id[val] = ix
-
-    transcript_to_vtx_id_overlapping = {}
-    for ix, row in vtx_id_to_transcripts.iterrows():
-        for val in row['transcripts_overlapping']:
-            transcript_to_vtx_id_overlapping[val] = ix
-            
-    # Sum transcripts for VTX id
+    all_transcripts = [i for i in np.concatenate((*vtx_id_to_transcripts['transcripts_exact'],
+                                                  *vtx_id_to_transcripts['transcripts_overlapping']))
+                       if i.startswith('ENST')]
+    de_tables_dict, de_metadata = load_de_results(all_transcripts)
+    # Sum expression over each VTX            
     xena_vtx_sums = xena_expression.T.copy()
-    xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(transcript_to_vtx_id.keys())]
-    xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
-    xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
-    de_tables_dict, de_metadata = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
-    
-    print(vtx_combination_type)
-    print(f'xena_metadata dimensions: {xena_metadata.shape}')
-    print(f'xena_vtx_sums dimensions: {xena_vtx_sums.shape}')
-    print(f'xena_expression dimensions: {xena_expression.shape}')
-
-    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict, de_metadata
+    xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
+    xena_exact_vtx_sums = {}
+    xena_overlapping_vtx_sums = {}
+    transcripts_in_xena = xena_expression.columns
+    for vtx_id, row in vtx_id_to_transcripts.iterrows():
+        if len(transcripts_in_xena.intersection(row['transcripts_exact'])) > 0:
+            xena_exact_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_exact'])].sum(axis=1)
+        if len(transcripts_in_xena.intersection(row['transcripts_overlapping'])) > 0:
+            xena_overlapping_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_overlapping'])].sum(axis=1)
+    xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
+    xena_overlapping_vtx_sums = pd.DataFrame(xena_overlapping_vtx_sums)
+    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_vtx_sums, xena_overlapping_vtx_sums, de_tables_dict, de_metadata
 
 
 @st.cache_data()
 def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
-    xena_metadata_df, _, _, xena_vtx_sum_df, _, _ = load_xena_tcga_gtex_target(vtx_combination_type)
+    xena_metadata_df, _, _, xena_exact_vtx_sums, xena_overlapping_vtx_sums, _, _= load_xena_tcga_gtex_target(vtx_combination_type)
+    if vtx_combination_type == 'transcripts_overlapping':
+        xena_vtx_sum_df = xena_overlapping_vtx_sums.copy()
+    elif vtx_combination_type == 'transcripts_exact':
+        xena_vtx_sum_df = xena_exact_vtx_sums.copy()
+    else:
+        raise ValueError("vtx_combination_type is not a known value ('transcripts_exact', or 'transcripts_overlapping')")
     
     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
 
@@ -238,7 +238,7 @@ def sorf_table(sorf_excel_df):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    xena_metadata, xena_expression, vtx_id_to_transcripts, _, de_tables_dict, de_metadata = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = load_xena_tcga_gtex_target()
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
