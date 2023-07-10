@@ -50,6 +50,7 @@ def load_sorf_excel():
     sorf_excel_df = sorf_excel_df[cols]
     return sorf_excel_df
 
+
 @st.cache_data()
 def load_kibby_results(sorf_excel):
     kibby = pd.read_csv('../data/phase1to6_kibby.csv', index_col=0)
@@ -117,6 +118,12 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
     xena_vtx_sums['vtx_id'] = xena_vtx_sums.apply(lambda x: transcript_to_vtx_id[x.name], axis=1)
     xena_vtx_sums = xena_vtx_sums.groupby('vtx_id').aggregate(np.sum).T
     de_tables_dict, de_metadata = load_de_results(list(transcript_to_vtx_id.keys())+list(transcript_to_vtx_id_overlapping.keys()))
+    
+    print(vtx_combination_type)
+    print(f'xena_metadata dimensions: {xena_metadata.shape}')
+    print(f'xena_vtx_sums dimensions: {xena_vtx_sums.shape}')
+    print(f'xena_expression dimensions: {xena_expression.shape}')
+
     return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_vtx_sums, de_tables_dict, de_metadata
 
 
@@ -362,8 +369,12 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                 'Select Tissue Specificity Tau',
                 0.0, 1.0, (.8, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
-        
-        option, events, tissue_vtx_ids = plotting.expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df)
+            tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
+
+        with col3:
+            st.write(f'{len(tissue_specific_vtx_ids)}')
+            
+        option, events = plotting.expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df)
 
         display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
@@ -374,8 +385,8 @@ def sorf_transcriptome_atlas(sorf_excel_df):
             fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
             st.plotly_chart(fig, use_container_width=True)
 
-        df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_vtx_ids)][display_cols]
-        exp_df = xena_vtx_exp_df[tissue_vtx_ids].copy()
+        df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
+        exp_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
         df = df.merge(exp_df.T, left_on='vtx_id', right_index=True)
         st.header('Tissue specific sORFs')
         st.dataframe(df)

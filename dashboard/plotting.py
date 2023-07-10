@@ -13,6 +13,7 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 import streamlit.components.v1 as components
 
+
 def color_protein_terminal_ends(aa_seq, pdb_string):
     """
     Modify pdb string to color terminal ends.
@@ -31,6 +32,7 @@ def color_protein_terminal_ends(aa_seq, pdb_string):
             elif pieces[5] == str(len(aa_seq)):
                 parts[ix] = line.replace(f'1.00 {pieces[-2]}', '1.00 0.00')
     return '\n'.join(parts)
+
 
 def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, de_metadata, title):
     """
@@ -294,15 +296,11 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     return option, events
 
 
-def expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df):
+def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df):
 
     """
     """
-    tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
-    #row_df = pd.DataFrame(row_names)
 
-    #specific_df = row_df[row_df.apply(lambda x: True if x[0] in tissue_specific_vtx_ids else False, axis=1)]
-    #specific_df.reset_index(inplace=True)
     xena_vtx_sum_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
 
     # compute the clusters
@@ -397,7 +395,7 @@ def expression_atlas_heatmap_plot(xena_tau_df, values, xena_vtx_sum_df):
         "dblclick": "function(params) { return [params.type, params.name, params.value] }"
     }
 
-    return option, events, tissue_specific_vtx_ids
+    return option, events
 
 
 def expression_vtx_boxplot(transcript_id, expression_df):
