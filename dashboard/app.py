@@ -94,7 +94,7 @@ def load_esmfold():
 
 
 @st.cache_data()
-def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
+def load_xena_tcga_gtex_target():
     # Expression is saved as TPM + 0.001 (NOT LOGGED)
     xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
     xena_metadata = xena_expression[xena_expression.columns[:6]]
@@ -118,26 +118,20 @@ def load_xena_tcga_gtex_target(vtx_combination_type='transcripts_exact'):
             xena_overlapping_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_overlapping'])].sum(axis=1)
     xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
     xena_overlapping_vtx_sums = pd.DataFrame(xena_overlapping_vtx_sums)
-    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_vtx_sums, xena_overlapping_vtx_sums, de_tables_dict, de_metadata
-
+    xena_exact_heatmap_data = process_sums_dataframe_to_heatmap(xena_exact_vtx_sums, xena_metadata)
+    xena_overlapping_heatmap_data = process_sums_dataframe_to_heatmap(xena_overlapping_vtx_sums, xena_metadata)
+    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata
 
 @st.cache_data()
-def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
-    xena_metadata_df, _, _, xena_exact_vtx_sums, xena_overlapping_vtx_sums, _, _= load_xena_tcga_gtex_target(vtx_combination_type)
-    if vtx_combination_type == 'transcripts_overlapping':
-        xena_vtx_sum_df = xena_overlapping_vtx_sums.copy()
-    elif vtx_combination_type == 'transcripts_exact':
-        xena_vtx_sum_df = xena_exact_vtx_sums.copy()
-    else:
-        raise ValueError("vtx_combination_type is not a known value ('transcripts_exact', or 'transcripts_overlapping')")
-    
+def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
 
     xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
 
     xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
     transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
-    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(xena_vtx_sum_df['primary disease or tissue']).aggregate(np.mean)
+    groups = xena_metadata_df.loc[xena_vtx_sum_df.index][['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis=1)
+    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(groups).aggregate(np.mean)
 
     threshold = .1
     mean_vals = xena_vtx_sum_df.max()
@@ -150,6 +144,7 @@ def load_xena_heatmap(vtx_combination_type='transcripts_overlapping'):
     xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
 
     return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
+
 
 
 @st.cache_data()
@@ -193,7 +188,7 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 
-def sorf_table(sorf_excel_df):
+def sorf_table(sorf_excel_df, tcga_data):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
 
@@ -238,7 +233,7 @@ def sorf_table(sorf_excel_df):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = tcga_data
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_excel_df)
@@ -349,9 +344,8 @@ def sorf_table(sorf_excel_df):
             stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
 
 
-def sorf_transcriptome_atlas(sorf_excel_df):
+def sorf_transcriptome_atlas(sorf_excel_df, xena_metadata, xena_exact_heatmap_data, xena_overlapping_heatmap_data):
     st.title("sORF Transcriptome Atlas")
-    
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -359,10 +353,10 @@ def sorf_transcriptome_atlas(sorf_excel_df):
                                ('Boundary Overlap', 'Exact Overlap'))
             
             if tx_type == 'Boundary Overlap':
-                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap()
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = xena_overlapping_heatmap_data
 
             else:
-                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap('transcripts_exact')
+                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = xena_exact_heatmap_data
 
         with col2:
             values = st.slider(
@@ -429,16 +423,17 @@ def main():
         "sORF Genome Browser": genome_browser,
         # "sORF Selector": selector,
     }
-    
+    tcga_data = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     sorf_excel_df = load_sorf_excel()
   
     tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
-        sorf_table(sorf_excel_df)
+        sorf_table(sorf_excel_df, tcga_data)
 
     with tab2:
-        sorf_transcriptome_atlas(sorf_excel_df)
+        sorf_transcriptome_atlas(sorf_excel_df, xena_metadata, xena_exact_heatmap_data, xena_overlapping_heatmap_data)
 
     with tab3:
         genome_browser()
