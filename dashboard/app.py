@@ -188,7 +188,7 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 
-def sorf_table(sorf_excel_df, tcga_data):
+def sorf_table(sorf_excel_df):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
 
@@ -233,6 +233,7 @@ def sorf_table(sorf_excel_df, tcga_data):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
+    tcga_data = load_xena_tcga_gtex_target()
     xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = tcga_data
     esmfold = load_esmfold()
     blastp_mouse_hits = load_mouse_blastp_results()
@@ -344,8 +345,10 @@ def sorf_table(sorf_excel_df, tcga_data):
             stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
 
 
-def sorf_transcriptome_atlas(sorf_excel_df, xena_metadata, xena_exact_heatmap_data, xena_overlapping_heatmap_data):
+def sorf_transcriptome_atlas(sorf_excel_df):
     st.title("sORF Transcriptome Atlas")
+    tcga_data = load_xena_tcga_gtex_target()
+    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -423,17 +426,15 @@ def main():
         "sORF Genome Browser": genome_browser,
         # "sORF Selector": selector,
     }
-    tcga_data = load_xena_tcga_gtex_target()
-    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     sorf_excel_df = load_sorf_excel()
   
     tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
-        sorf_table(sorf_excel_df, tcga_data)
+        sorf_table(sorf_excel_df)
 
     with tab2:
-        sorf_transcriptome_atlas(sorf_excel_df, xena_metadata, xena_exact_heatmap_data, xena_overlapping_heatmap_data)
+        sorf_transcriptome_atlas(sorf_excel_df)
 
     with tab3:
         genome_browser()
