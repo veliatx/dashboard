@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from Bio.Seq import Seq
 from types import SimpleNamespace
+import re
 
 # from conservation import phylocsf
 # from seqmap import genomic, utils
@@ -20,8 +21,8 @@ from types import SimpleNamespace
 from sqlalchemy import and_, or_
 
 from veliadb import base, settings, annotation_loading
-from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref,
-                          TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon)
+from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
+                          TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref)
 import veliadb.util as vdb_util
 
 pd.options.display.max_columns = 100
@@ -43,7 +44,71 @@ class OrfData(object):
         self.block_sizes = orf_query_object.block_sizes
         self.phases = orf_query_object.phases
         self.assembly_id = orf_query_object.assembly_id
+        self.secondary_orf_id = orf_query_object.secondary_orf_id
+        
+def parse_orf(orf, session):
+    orf_xrefs = ';'.join([ox.xref for ox in session.query(OrfXref).filter(OrfXref.orf_id == orf.id).all() if ox.xref])
+    pattern = r'U\w{9}-[0-9]*'
+    match = re.search(pattern, orf_xrefs)
+    if match:
+        genscript_id = match.group()
+    else:
+        genscript_id = ""
+    vtx_id = f'VTX-{orf.id:07d}'
+    chrom = orf.assembly.ucsc_style_name
+    strand = orf.strand
+    start = str(orf.start)
+    end = str(orf.end)
+    chrom_starts = orf.chrom_starts
+    block_sizes = orf.block_sizes
+    phases = orf.phases
+    seqs = orf.aa_seq
+    source = ';'.join(set([x.orf_data_source.name for x in orf.xref]))
+    
+    
+        
+    ucsc_track = f'{orf.assembly.ucsc_style_name}:{orf.start}-{orf.end}'
 
+    gene_ids = [g.id for g in session.query(Gene).filter(and_(Gene.assembly_id == orf.assembly_id,
+                                                              Gene.strand == orf.strand,
+                                                              Gene.start < orf.start,
+                                                              Gene.end > orf.end)).all()]
+    
+    gene_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(gene_ids)).all()])
+    
+    
+    transcript_ids = [t.id for t in session.query(Transcript).filter(and_(Transcript.assembly_id == orf.assembly_id,
+                                                                          Transcript.strand == orf.strand,
+                                                                          Transcript.start < orf.start,
+                                                                          Transcript.end > orf.end)).all()]
+    
+    transcript_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(transcript_ids)).all()])
+    protein_xrefs = ';'.join([str(px.xref) for px in \
+                         session.query(ProteinXref)\
+                                .join(Protein, Protein.id == ProteinXref.protein_id)\
+                                .filter(Protein.aa_seq == seqs).all()])
+    return {
+        'vtx': vtx_id,
+        'genscript_id': genscript_id,
+        'velia_id': orf.velia_id,
+        'secondary_id': orf.secondary_orf_id,
+        'ucsc_track': ucsc_track,
+        'chr': chrom,
+        'strand': strand,
+        'start': start,
+        'end': end,
+        'chrom_starts': chrom_starts,
+        'block_sizes': block_sizes,
+        'phases': phases,
+        'aa': seqs,
+        'nucl': orf.nt_seq,
+        'orf_xrefs': orf_xrefs,
+        'gene_xrefs': gene_xrefs,
+        'transcript_xrefs': transcript_xrefs,
+        'protein_xrefs': protein_xrefs,
+        'source': source
+    }
+    
 def extract_nucleotide_sequence_veliadb(orf, reference):
 # orf = [i for i in orfs if ';' in i.block_sizes][2]
     if orf.start == -1 or orf.end == -1:

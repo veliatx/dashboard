@@ -22,41 +22,101 @@ from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
 
+from veliadb import base
+from veliadb.base import Orf, Protein, ProteinXref
+
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
 
 @st.cache_data()
 def load_protein_feature_string_representations():
-    df = pd.read_parquet('../data/sequence_features_strings.parq').T
+    df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv')).T
     return df
 
 
 @st.cache_data()
-def load_sorf_excel():
+def load_sorf_df():
     """
     """
-    sorf_excel_df = pd.read_excel('../data/interim_phase1to6_secreted_hits_20230330.xlsx')
-    
+    session = base.Session()
+
+    sorf_df = pd.read_excel('../data/interim_phase1to6_secreted_hits_20230330.xlsx')
+    secreted_ph7_hit_ids = pd.read_csv('../data/phase_7_secreted_hits.csv', index_col=0)
+
+    secreted_vtx_ids = set(sorf_df['vtx_id']).union(set(secreted_ph7_hit_ids.index))
+
+    sorf_df = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
+
+    sorf_df.rename(columns={'vtx': 'vtx_id'}, inplace=True)
+
     # removes any sORFs with multiple VTX IDs (e.g. multi-mappers to the genome)
-    sorf_excel_df = sorf_excel_df[~sorf_excel_df['vtx_id'].str.contains('\|')]
-    sorf_excel_df['index_copy'] = sorf_excel_df.index
+    sorf_df = sorf_df[sorf_df['vtx_id'].isin(secreted_vtx_ids)]
+    sorf_df = sorf_df[~sorf_df['vtx_id'].str.contains('\|')]
 
-    sorf_excel_df['show_details'] = False
+    sorf_df['index_copy'] = sorf_df.index
 
-    cols = list(sorf_excel_df.columns)
+    sorf_df['show_details'] = False
+    sorf_df['orf_xrefs'] = sorf_df.apply(lambda x: x.orf_xrefs.split(';'), axis=1)
+    sorf_df['source'] = sorf_df.apply(lambda x: x.source.split(';'), axis=1)
+
+    cols = list(sorf_df.columns)
     cols.insert(0, cols.pop(cols.index('show_details')))
 
-    sorf_excel_df = sorf_excel_df[cols]
-    return sorf_excel_df
+    phase_ids = []
+    phase_entries = []
+    protein_xrefs = []
+    for i, row in sorf_df.iterrows():
+        protein_xrefs.append([str(px.xref) for px in \
+                                session.query(ProteinXref)\
+                                        .join(Protein, Protein.id == ProteinXref.protein_id)\
+                                        .filter(Protein.aa_seq == row.aa).all()])
+        if row.velia_id.startswith('Phase'):
+            phase_ids.append(row.velia_id)
+            phase_entries.append(f'Phase {row.velia_id[6]}')
+        elif row.secondary_id.startswith('Phase'):
+            phase_ids.append(row.secondary_id)
+            phase_entries.append(f'Phase {row.secondary_id[6]}')
+        elif any(['Phase' in xref for xref in row.orf_xrefs]):
+            phase_id = [x for x in row.orf_xrefs if x.startswith('Phase')][0]
+            phase_ids.append(phase_id)
+            phase_entries.append(f'Phase {phase_id[6]}')
+        elif row.velia_id.startswith('smORF'):
+            phase_ids.append(row.velia_id)
+            phase_entries.append('Phase 1')
+        else:
+            orf = session.query(Orf).filter(Orf.id == int(row.vtx_id.split('-')[1])).one()
+            phase_ids.append(orf.velia_id)
+            if orf.velia_id.startswith('Phase'):
+                phase_entries.append(f'Phase {orf.velia_id[6]}')
+            else:
+                phase_entries.append('-1')
+
+    sorf_df['screening_phase_id'] = phase_ids
+    sorf_df['screening_phase'] = phase_entries
+    sorf_df['protein_xrefs'] = protein_xrefs
+
+    sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
+
+    cols = ['show_details', 'vtx_id', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
+            'source', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',  
+            'transcripts_exact', 'transcripts_overlapping', 'aa', 'nucl', 
+            'index_copy', 'genscript_id', 'chr', 'strand', 'start', 'end', 
+            'chrom_starts', 'block_sizes', 'phases',]
+
+    sorf_df = sorf_df[cols]
+    session.close()
+    return sorf_df
 
 
 @st.cache_data()
-def load_kibby_results(sorf_excel):
-    kibby = pd.read_csv('../data/phase1to6_kibby.csv', index_col=0)
+def load_kibby_results(sorf_table):
+    kibby = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'kibby.out'), index_col=0)
+    
     kibby['conservation'] = kibby.conservation.apply(lambda x: list(map(float, x.strip().split(' '))))
-    kibby = kibby.loc[sorf_excel['primary_id']]
-    kibby.index = sorf_excel['vtx_id']
+    subdf = sorf_table.loc[sorf_table.index.intersection(kibby.index)]
+    kibby = kibby.loc[subdf.index]
+    kibby.index = sorf_table.loc[kibby.index, 'vtx_id']
     return kibby
 
 
@@ -67,8 +127,11 @@ def load_de_results(transcripts):
     for f in cache_filez:
         if f.endswith('_de.parq') and not (f=='expression_de.parq'):
             df = pd.read_parquet(os.path.join(CACHE_DIR, f))
-            df = df.loc[df.index.intersection(transcripts)].copy()
+            df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
+            df = df[df['transcript'].isin(transcripts)].copy()
             temp_dict[f.split('_')[0]] = df
+            
+            print(f, df.shape)
     de_tables_dict = defaultdict(dict)
     for c, df in tqdm(temp_dict.items()):
         for row in df.itertuples():
@@ -90,6 +153,12 @@ def load_esmfold():
     with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
         for l in fopen.iter():
             esmfold[l['sequence']] = l
+    with jsonlines.open('../data/phase7_candidates.esmfold.json') as fopen:
+        for l in fopen.iter():
+            esmfold[l['sequence']] = l
+    # with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
+    #     for l in fopen.iter():
+    #         esmfold[l['sequence']] = l
     return esmfold
 
 
@@ -122,6 +191,7 @@ def load_xena_tcga_gtex_target():
     xena_overlapping_heatmap_data = process_sums_dataframe_to_heatmap(xena_overlapping_vtx_sums, xena_metadata)
     return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata
 
+
 @st.cache_data()
 def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
@@ -146,11 +216,11 @@ def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
     return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
 
 
-
 @st.cache_data()
 def load_mouse_blastp_results():
     hits_per_query = defaultdict(list)
-    with open('../data/phase1to6_secreted_mouse_blastp.json', 'r') as fopen:
+    sorf_table_data = {}
+    with open(os.path.join(CACHE_DIR, 'protein_data', 'blastp.results.json'), 'r') as fopen:
         blastp = json.load(fopen)
         blastp = blastp['BlastOutput2']
     for entry in blastp:
@@ -171,7 +241,17 @@ def load_mouse_blastp_results():
                 alignment['hit_ids'] = ';'.join(ids)
                 alignment['alignment'] = align_str
                 hits_per_query[q].append(alignment)
-    return hits_per_query
+                if isinstance(alignment, dict):
+                    best_hit = alignment
+                else:
+                    best_hit = pd.DataFrame(alignment).sort_values('score', ascending=False).iloc[0]
+                sorf_table_data[q] = {'blastp_score': best_hit['score'],
+                 'blastp_query_coverage': best_hit['align_len']/len(best_hit['qseq']),
+                 'blastp_align_length': best_hit['align_len'],
+                 'blastp_gaps': best_hit['gaps'],
+                 'blastp_align_identity': best_hit['identity']/best_hit['align_len']
+                }
+    return hits_per_query, sorf_table_data
 
 
 @st.cache_data()
@@ -188,11 +268,11 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 
-def sorf_table(sorf_excel_df):
+def sorf_details(sorf_df):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
 
-    df = filter_dataframe(sorf_excel_df)
+    df = filter_dataframe(sorf_df)
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
@@ -208,19 +288,21 @@ def sorf_table(sorf_excel_df):
             df.at[row_idx_name, 'show_details'] = True
             st.session_state['curr_vtx_id'] = str(df.loc[row_idx_name]['vtx_id'])
 
+    st.write(f'{df.shape[0]} sORF entries')
     update_df = st.data_editor(
         df,
         column_config={
             'vtx_id': st.column_config.TextColumn(disabled=True),
-            'primary_id': st.column_config.TextColumn(disabled=True),
+            'screening_phase_id': st.column_config.TextColumn(disabled=True),
+            'screening_phase': st.column_config.TextColumn(disabled=True),
             'genscript_id': st.column_config.TextColumn(disabled=True),
-            'phase': st.column_config.TextColumn(disabled=True),
-            'orf_xref': st.column_config.TextColumn(disabled=True),
-            'protein_xrefs': st.column_config.TextColumn(disabled=True),
-            'gene_xref': st.column_config.TextColumn(disabled=True),
+            #'orf_xrefs': st.column_config.TextColumn(disabled=True),
+            #'protein_xrefs': st.column_config.TextColumn(disabled=True),
+            #'gene_xrefs': st.column_config.TextColumn(disabled=True),
 
         },
-        key='data_editor'
+        key='data_editor',
+        hide_index=True
     )
 
     st.download_button(
@@ -236,8 +318,8 @@ def sorf_table(sorf_excel_df):
     tcga_data = load_xena_tcga_gtex_target()
     xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = tcga_data
     esmfold = load_esmfold()
-    blastp_mouse_hits = load_mouse_blastp_results()
-    kibby = load_kibby_results(sorf_excel_df)
+    blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
+    kibby = load_kibby_results(sorf_df)
     protein_features_df = load_protein_feature_string_representations()
     phylocsf_dataframe = load_phylocsf_data()
     xena_overlap = []
@@ -249,7 +331,7 @@ def sorf_table(sorf_excel_df):
 
         st.divider()
         st.header('sORF Details')
-        st.dataframe(selected_row[['vtx_id', 'primary_id', 'orf_xref', 'protein_xrefs', 'gene_xref']])
+        st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
 
         #link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
         #st.write(f"UCSC Browser [link]({link})")
@@ -288,6 +370,7 @@ def sorf_table(sorf_excel_df):
                     de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
                                                                                                            de_tables_dict, de_metadata,
                                                                                                            chart_title)
+                                                                                                    
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
                 
             if (len(xena_overlap)>0) and value:
@@ -303,7 +386,7 @@ def sorf_table(sorf_excel_df):
             with col3:
 
                 # Load esmfold data for selected sORF
-                sorf_aa_seq = sorf_excel_df[sorf_excel_df['vtx_id']==vtx_id]['aa'].iloc[0]
+                sorf_aa_seq = sorf_df[sorf_df['vtx_id']==vtx_id]['aa'].iloc[0]
                 plddt = esmfold[sorf_aa_seq]['plddt']
                 # Plot plDDT, Phylocsf, and kibby
                 achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold)
@@ -331,7 +414,7 @@ def sorf_table(sorf_excel_df):
         
         with st.expander("BLASTp results", expanded=True):
             # Blastp Mouse
-            primary_id = sorf_excel_df[sorf_excel_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
+            primary_id = sorf_df[sorf_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
             blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
             if len(blastp_results_selected_sorf) == 0:
                 long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
@@ -345,7 +428,7 @@ def sorf_table(sorf_excel_df):
             stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
 
 
-def sorf_transcriptome_atlas(sorf_excel_df):
+def sorf_transcriptome_atlas(sorf_df):
     st.title("sORF Transcriptome Atlas")
     tcga_data = load_xena_tcga_gtex_target()
     xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
@@ -373,16 +456,16 @@ def sorf_transcriptome_atlas(sorf_excel_df):
             
         option, events = plotting.expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df)
 
-        display_cols = ['vtx_id', 'primary_id', 'phase', 'orf_xref', 'protein_xrefs', 'gene_xref', 'transcript_xref', 'source', 'secreted_mean', 'translated_mean', 'isoform_of']
+        display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs', 'source']#, 'secreted_mean', 'translated_mean', 'isoform_of']
         value = st_echarts(option, height="1000px", events=events)
         if value:
             st.header('Selected sORF')
-            st.dataframe(sorf_excel_df[sorf_excel_df['vtx_id'] == value][display_cols])
+            st.dataframe(sorf_df[sorf_df['vtx_id'] == value][display_cols])
             
             fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
             st.plotly_chart(fig, use_container_width=True)
 
-        df = sorf_excel_df[sorf_excel_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
+        df = sorf_df[sorf_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
         exp_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
         df = df.merge(exp_df.T, left_on='vtx_id', right_index=True)
         st.header('Tissue specific sORFs')
@@ -396,12 +479,12 @@ def sorf_transcriptome_atlas(sorf_excel_df):
         )
            
 
-def selector(sorf_excel_df):
+def selector(sorf_df):
     st.title("Select sORFs Interactively")
-    st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_excel_df.columns, index=11)
-    st.session_state['y_feature'] = st.selectbox("Select Y Feature", options = sorf_excel_df.columns, index=12)
+    st.session_state['x_feature'] = st.selectbox("Select X Feature", options = sorf_df.columns, index=11)
+    st.session_state['y_feature'] = st.selectbox("Select Y Feature", options = sorf_df.columns, index=12)
     
-    fig = px.scatter(sorf_excel_df, x=st.session_state['x_feature'], y=st.session_state['y_feature'])
+    fig = px.scatter(sorf_df, x=st.session_state['x_feature'], y=st.session_state['y_feature'])
     selected_points = plotly_events(fig)
     st.write(selected_points)
 
@@ -421,26 +504,26 @@ def main():
     
     # Define a dictionary with the page names and corresponding functions
     pages = {
-        "sORF Table": sorf_table,
+        "sORF Details": sorf_details,
         "sORF Transcriptome Atlas": sorf_transcriptome_atlas,
         "sORF Genome Browser": genome_browser,
         # "sORF Selector": selector,
     }
-    sorf_excel_df = load_sorf_excel()
+    sorf_df = load_sorf_df()
   
     tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
-        sorf_table(sorf_excel_df)
+        sorf_details(sorf_df)
 
     with tab2:
-        sorf_transcriptome_atlas(sorf_excel_df)
+        sorf_transcriptome_atlas(sorf_df)
 
     with tab3:
         genome_browser()
         
     # with tab4:
-    #     selector(sorf_excel_df)
+    #     selector(sorf_df)
 
 
 if __name__ == "__main__":

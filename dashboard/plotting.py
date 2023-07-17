@@ -45,6 +45,7 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
           results for different cancer types.
           
     """
+    print(de_tables_dict)
     sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
