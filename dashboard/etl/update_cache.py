@@ -28,7 +28,7 @@ if __name__ == '__main__':
     missing_orfs = set(ids) - set([i.id for i in orfs])
     if len(missing_orfs) > 0:
         print('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
-
+    # """
     transcript_matching_results = run_id_mapping_parallel(orfs, NCPU = 1) # implemented for multithreading but had issues with db access in multiprocessing
     # Loop over orfs, and populate sorf_table file with attributes of interest
     transcripts_to_map = []
@@ -53,6 +53,7 @@ if __name__ == '__main__':
             transcripts_to_map+=exact_tids
             transcripts_to_map+=[i.split('.')[0] for i in overlapping_tids if i.startswith('ENST')]
             fh.write(attributes)
+    # """
     sorf_table = load_jsonlines_table(os.path.join(OUTPUT_DIR, 'sorf_table.jsonlines'), index_col='vtx')
     transcripts_to_map = np.concatenate((*sorf_table['transcripts_exact'], *sorf_table['transcripts_overlapping']))
     xena, metadata, tissue_pairs = load_xena_transcripts_with_metadata_from_s3(transcripts_to_map)
@@ -72,9 +73,9 @@ if __name__ == '__main__':
     tissue_pairs.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
     
     with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
-        for ix, row in sorf_table.iterrows():
-            fopen.write(f">{row['vtx']}\n{row['aa']}\n")
-    #subprocess.run(shlex.split(f"/home/ec2-user/anaconda/envs/protein_tools/bin/python /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
+       for ix, row in sorf_table.iterrows():
+           fopen.write(f">{row['vtx']}\n{row['aa']}\n")
+    subprocess.run(shlex.split(f"/home/ec2-user/anaconda/envs/protein_tools/bin/python /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
     
     
 

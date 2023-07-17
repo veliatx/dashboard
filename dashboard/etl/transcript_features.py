@@ -21,10 +21,12 @@ def load_xena_transcripts_with_metadata_from_s3(transcripts_to_load = None):
     """
     xena_transcripts = pd.read_csv('s3://velia-data-dev/VDC_004_annotation/tcga/20230329_tcga_data/xena_transcript_names.csv')
     if transcripts_to_load is None:
-        transcripts_to_map = xena_transcripts['Xena Transcripts']
+        selected_transcripts = [str(t[0]) for t in xena_transcripts.values]
     else:
         overlapping_xena_sorf_transcripts = set(xena_transcripts['Xena Transcripts']).intersection(set(transcripts_to_load))
-    xena = pd.read_feather('s3://velia-data-dev/VDC_004_annotation/tcga/20230329_tcga_data/xena.feather', columns = ['index']+list(overlapping_xena_sorf_transcripts))
+        selected_transcripts = [str(t) for t in overlapping_xena_sorf_transcripts]
+
+    xena = pd.read_feather('s3://velia-data-dev/VDC_004_annotation/tcga/20230329_tcga_data/xena.feather', columns = ['index'] + selected_transcripts)
     xena.index = xena.pop('index')
     metadata = pd.read_table('s3://velia-data-dev/VDC_004_annotation/tcga/20230329_tcga_data/Xena/TcgaTargetGTEX_phenotype.txt',
                              encoding = "ISO-8859-1", index_col=0)

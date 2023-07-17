@@ -31,7 +31,7 @@ TPM_DESEQ2_FACTOR = 80
 
 @st.cache_data()
 def load_protein_feature_string_representations():
-    df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv')).T
+    df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0).T
     return df
 
 
@@ -131,7 +131,6 @@ def load_de_results(transcripts):
             df = df[df['transcript'].isin(transcripts)].copy()
             temp_dict[f.split('_')[0]] = df
             
-            print(f, df.shape)
     de_tables_dict = defaultdict(dict)
     for c, df in tqdm(temp_dict.items()):
         for row in df.itertuples():
@@ -140,8 +139,8 @@ def load_de_results(transcripts):
     for t, d in de_tables_dict.items():
         de_tables_dict[t] = pd.DataFrame(d).T
     tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
-    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA', 'GTEx']).copy()
-    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA']
+    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
+    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
     return de_tables_dict, tcga_gtex_tissue_metadata
 
 
@@ -174,6 +173,7 @@ def load_xena_tcga_gtex_target():
                                                   *vtx_id_to_transcripts['transcripts_overlapping']))
                        if i.startswith('ENST')]
     de_tables_dict, de_metadata = load_de_results(all_transcripts)
+    de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
     # Sum expression over each VTX            
     xena_vtx_sums = xena_expression.T.copy()
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
@@ -387,6 +387,9 @@ def sorf_details(sorf_df):
 
                 # Load esmfold data for selected sORF
                 sorf_aa_seq = sorf_df[sorf_df['vtx_id']==vtx_id]['aa'].iloc[0]
+                if sorf_aa_seq[-1] == '*':
+                    sorf_aa_seq = sorf_aa_seq[:-1]
+
                 plddt = esmfold[sorf_aa_seq]['plddt']
                 # Plot plDDT, Phylocsf, and kibby
                 achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold)
@@ -414,8 +417,8 @@ def sorf_details(sorf_df):
         
         with st.expander("BLASTp results", expanded=True):
             # Blastp Mouse
-            primary_id = sorf_df[sorf_df['vtx_id'] == vtx_id].iloc[0]['primary_id']
-            blastp_results_selected_sorf = blastp_mouse_hits[primary_id]
+            # primary_id = sorf_df[sorf_df['vtx_id'] == vtx_id].iloc[0]['screening_phase_id']
+            blastp_results_selected_sorf = blastp_mouse_hits[vtx_id]
             if len(blastp_results_selected_sorf) == 0:
                 long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
             else:

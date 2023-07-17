@@ -45,7 +45,6 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
           results for different cancer types.
           
     """
-    print(de_tables_dict)
     sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
     sum_expression_cancer['condition'] = 'Cancer'
     sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
@@ -56,7 +55,7 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
     result['TCGA'] = result.index
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
-    result['GTEx Normal Tissue'] = de_metadata['GTEx']
+    result['GTEx Normal Tissue'] = de_metadata['GTEx Tissue Type']
     # Define the bar plot using plotly express
     return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
 
@@ -95,7 +94,7 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata
         return None
     
     dataframe.sort_values(by='Cancer', inplace=True)
-    tcga_code_to_description = de_metadata[['Description', 'GTEx']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
+    tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
     option = {
       'title': {'text': title},
       'tooltip': {
