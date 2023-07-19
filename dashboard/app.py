@@ -242,7 +242,7 @@ def load_mouse_blastp_results():
                     ids.append(item['accession'])
                 alignment = h['hsps']
                 alignment = alignment[0]
-                align_str = '  \n'.join([alignment['qseq'], alignment['midline'], alignment['hseq']])
+                align_str = '  \n'.join([h['description'][0]['title'], alignment['qseq'], alignment['midline'], alignment['hseq']])
                 alignment['hit_ids'] = ';'.join(ids)
                 alignment['alignment'] = align_str
                 hits_per_query[q].append(alignment)
@@ -250,11 +250,14 @@ def load_mouse_blastp_results():
                     best_hit = alignment
                 else:
                     best_hit = pd.DataFrame(alignment).sort_values('score', ascending=False).iloc[0]
+                best_hit_description = [h for h in hits if h['num'] == best_hit['num']][0]['description'][0]
                 sorf_table_data[q] = {'blastp_score': best_hit['score'],
                  'blastp_query_coverage': best_hit['align_len']/len(best_hit['qseq']),
                  'blastp_align_length': best_hit['align_len'],
                  'blastp_gaps': best_hit['gaps'],
-                 'blastp_align_identity': best_hit['identity']/best_hit['align_len']
+                 'blastp_align_identity': best_hit['identity']/best_hit['align_len'],
+                'blastp_subject': best_hit_description['id'],
+                'blastp_hit_description': best_hit_description['title']
                 }
     return hits_per_query, sorf_table_data
 
