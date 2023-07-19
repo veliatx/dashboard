@@ -24,6 +24,7 @@ from dashboard.etl.sorf_query import load_jsonlines_table
 
 from veliadb import base
 from veliadb.base import Orf, Protein, ProteinXref
+import gzip
 
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
@@ -158,18 +159,10 @@ def load_esmfold():
     """
     """
     esmfold = {}
-    with jsonlines.open('../data/phase1to7_secreted_esmfold.jsonlines') as fopen:
-        for l in fopen.iter():
+    with gzip.open('../data/phase1to7_all_esmfold.jsonlines.gz') as fopen:
+        j_reader = jsonlines.Reader(fopen)
+        for l in j_reader:
             esmfold[l['sequence']] = l
-    # with jsonlines.open('../data/phase7_candidates.esmfold.json') as fopen:
-    #     for l in fopen.iter():
-    #         esmfold[l['sequence']] = l
-    # with jsonlines.open('../data/phase7_part2_esmfold.jsonlines') as fopen:
-    #     for l in fopen.iter():
-    #         esmfold[l['sequence']] = l
-    # with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
-    #     for l in fopen.iter():
-    #         esmfold[l['sequence']] = l
     return esmfold
 
 
