@@ -112,6 +112,7 @@ def load_sorf_df():
     sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
                   left_index=True, right_index=True, how='left')
     protein_strings = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
+    sorf_df.insert(4, 'aa_length', protein_strings['Sequence'].str.len())
     protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
     sorf_df = sorf_df.merge(protein_cutsite,
                   left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
@@ -122,7 +123,12 @@ def load_sorf_df():
            'secreted_mean', 'translated', 'swissprot_isoform', 'ensembl_isoform',
            'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
            'phylocsf_vals']], left_index=True, right_index=True, how='left')
+    
+    with open('../data/all_secreted_phase1to7.txt', 'r') as f:
+        secreted_ids = [i.strip() for i in f.readlines()]
+    sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
 
+    
     return sorf_df
 
 
