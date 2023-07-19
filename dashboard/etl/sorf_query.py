@@ -14,6 +14,17 @@ from pathlib import Path
 from Bio.Seq import Seq
 from types import SimpleNamespace
 import re
+from Bio import SeqIO
+import pathlib
+current_folder = pathlib.Path(__file__).parents[0]
+
+transcripts = SeqIO.parse(os.path.join(current_folder, './gencode.v42.transcripts.fa'), 'fasta')
+transcripts = {r.id: str(r.seq).lower() for r in transcripts}
+
+# GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
+# reference = SeqIO.parse(os.path.join(current_folder, 'reference.fa'))
+# reference = {r.id: str(r.seq) for r in reference}
+
 
 # from conservation import phylocsf
 # from seqmap import genomic, utils
@@ -29,8 +40,40 @@ pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
-import pathlib
-current_folder = pathlib.Path(__file__).parents[0]
+
+
+from copy import deepcopy
+def parallel_sorf_query(vtx_id):
+# Query DB
+    session = base.Session() # connect to db
+    orfs = session.query(Orf).filter(Orf.id == vtx_id).all()
+    if len(orfs) == 0:
+        print(f"{vtx_id} not found in veliadb")
+        session.close()
+        # return {}
+    elif len(orfs) > 1:
+        print(f"{vtx_id} had multiple entries found in veliadb")
+        session.close()
+        # return {}
+    else:
+        current_orf = orfs[0]
+    # Loop over orfs, and populate sorf_table file with attributes of interest
+    # nt, aa = extract_nucleotide_sequence_veliadb(current_orf, reference)
+    nt = current_orf.nt_seq
+    aa = current_orf.aa_seq
+    r_internal = find_seq_substring(nt, transcripts)
+    transcripts_exact = [i.split('|')[0].split('.')[0] for i in r_internal if i.startswith('ENST')]
+    overlapping_tids = query_overlapping_transcripts(current_orf, session)
+    overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
+    attributes = parse_orf(current_orf, session)
+    attributes['transcripts_exact'] = transcripts_exact
+    attributes['transcripts_overlapping'] = overlapping_tids
+    # if attributes['aa'] == '':
+    attributes['aa'] = aa
+    # if attributes['nucl'] == '':
+    attributes['nucl'] = nt
+    session.close()
+    return attributes
 
 # class wrapper for orf query results to allow multiprocessing to iterate over orf objects
 class OrfData(object):
@@ -88,7 +131,7 @@ def parse_orf(orf, session):
                                 .join(Protein, Protein.id == ProteinXref.protein_id)\
                                 .filter(Protein.aa_seq == seqs).all()])
     return {
-        'vtx': vtx_id,
+        'vtx_id': vtx_id,
         'genscript_id': genscript_id,
         'velia_id': orf.velia_id,
         'secondary_id': orf.secondary_orf_id,
@@ -177,13 +220,13 @@ from tqdm import tqdm
 import os
 
 # deduped_conservation = pd.read_parquet('deduped_phylocsf_length_filtered.parq')
-transcripts = pyfaidx.Fasta(os.path.join(current_folder, './gencode.v42.transcripts.fa'))
+# transcripts = pyfaidx.Fasta(os.path.join(current_folder, './gencode.v42.transcripts.fa'))
 
 def find_seq_substring(query, target_dict):
     if query == '':
         return []
     else:
-        return [k for k, s in target_dict.items() if query.lower() in s[:].seq.lower()]
+        return [k for k, s in target_dict.items() if query.lower() in s]
 
 if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
     with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
@@ -230,8 +273,7 @@ def load_jsonlines_table(path_to_file, index_col = None):
         df.index = df[index_col]
     return df
                 
-GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
-reference = pyfaidx.Fasta(os.path.join(current_folder, 'reference.fa'))
+
 
 # with jsonlines.open('sorf_table.jsonlines', mode = 'w') as fh:
 #     for current_orf in tqdm(orfs):

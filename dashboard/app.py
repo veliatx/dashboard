@@ -46,9 +46,7 @@ def load_sorf_df():
 
     secreted_vtx_ids = set(sorf_df['vtx_id']).union(set(secreted_ph7_hit_ids.index))
 
-    sorf_df = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
-
-    sorf_df.rename(columns={'vtx': 'vtx_id'}, inplace=True)
+    sorf_df = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx_id')
 
     # removes any sORFs with multiple VTX IDs (e.g. multi-mappers to the genome)
     sorf_df = sorf_df[sorf_df['vtx_id'].isin(secreted_vtx_ids)]
@@ -106,6 +104,17 @@ def load_sorf_df():
 
     sorf_df = sorf_df[cols]
     session.close()
+    _, blastp_table = load_mouse_blastp_results()
+    sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
+    
+    id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230718.csv')
+    id_data.index = id_data['vtx_id']
+    sorf_df = sorf_df.merge(id_data[['trans1',
+           'trans2', 'trans3', 'sec1', 'sec2', 'sec3', 'translated_mean',
+           'secreted_mean', 'translated', 'swissprot_isoform', 'ensembl_isoform',
+           'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
+           'phylocsf_vals']], left_index=True, right_index=True, how='left')
+
     return sorf_df
 
 
@@ -149,12 +158,15 @@ def load_esmfold():
     """
     """
     esmfold = {}
-    with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
+    with jsonlines.open('../data/phase1to7_secreted_esmfold.jsonlines') as fopen:
         for l in fopen.iter():
             esmfold[l['sequence']] = l
-    with jsonlines.open('../data/phase7_candidates.esmfold.json') as fopen:
-        for l in fopen.iter():
-            esmfold[l['sequence']] = l
+    # with jsonlines.open('../data/phase7_candidates.esmfold.json') as fopen:
+    #     for l in fopen.iter():
+    #         esmfold[l['sequence']] = l
+    # with jsonlines.open('../data/phase7_part2_esmfold.jsonlines') as fopen:
+    #     for l in fopen.iter():
+    #         esmfold[l['sequence']] = l
     # with jsonlines.open('../data/phase1to6_secreted_esmfold.json') as fopen:
     #     for l in fopen.iter():
     #         esmfold[l['sequence']] = l
@@ -162,13 +174,13 @@ def load_esmfold():
 
 
 @st.cache_data()
-def load_xena_tcga_gtex_target():
+def load_xena_tcga_gtex_target(vtx_id_to_transcripts):
     # Expression is saved as TPM + 0.001 (NOT LOGGED)
     xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
     xena_metadata = xena_expression[xena_expression.columns[:6]]
     xena_expression = xena_expression[xena_expression.columns[6:]]
 
-    vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
+    # vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
     all_transcripts = [i for i in np.concatenate((*vtx_id_to_transcripts['transcripts_exact'],
                                                   *vtx_id_to_transcripts['transcripts_overlapping']))
                        if i.startswith('ENST')]
@@ -256,7 +268,7 @@ def load_mouse_blastp_results():
 
 @st.cache_data()
 def load_phylocsf_data():
-    pcsf = pd.read_csv(f"../data/interim_phase1to6_all_phylocsf-vals_20230628.csv", index_col=0)
+    pcsf = pd.read_csv(f"../data/interim_phase1to7_all_phylocsf-vals_20230628.csv", index_col=0)
     pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
@@ -315,7 +327,7 @@ def sorf_details(sorf_df):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    tcga_data = load_xena_tcga_gtex_target()
+    tcga_data = load_xena_tcga_gtex_target(sorf_df)
     xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = tcga_data
     esmfold = load_esmfold()
     blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
@@ -433,7 +445,7 @@ def sorf_details(sorf_df):
 
 def sorf_transcriptome_atlas(sorf_df):
     st.title("sORF Transcriptome Atlas")
-    tcga_data = load_xena_tcga_gtex_target()
+    tcga_data = load_xena_tcga_gtex_target(sorf_df)
     xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     with st.container():
         col1, col2, col3 = st.columns(3)
@@ -470,7 +482,7 @@ def sorf_transcriptome_atlas(sorf_df):
 
         df = sorf_df[sorf_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
         exp_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
-        df = df.merge(exp_df.T, left_on='vtx_id', right_index=True)
+        df = df.merge(exp_df.T, left_index=True, right_index=True)
         st.header('Tissue specific sORFs')
         st.dataframe(df)
 
