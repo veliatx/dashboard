@@ -434,7 +434,7 @@ def format_protein_feature_strings_for_altair_heatmap(orf_features):
     values = []
     for i, (ix, row) in enumerate(orf_features.items()):
         for j, v in enumerate(row):
-            values.append([j, ix, v, seq[j]])
+            values.append([j+1, ix, v, seq[j]])
     df = pd.DataFrame(values, columns = ['Position', 'Tool', 'Predicted Class', 'aa'])
     return df
 

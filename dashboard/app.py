@@ -107,7 +107,14 @@ def load_sorf_df():
     session.close()
     _, blastp_table = load_mouse_blastp_results()
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    
+    protein_scores = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_scores.csv'), index_col=0)
+
+    sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
+                  left_index=True, right_index=True, how='left')
+    protein_strings = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
+    protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
+    sorf_df = sorf_df.merge(protein_cutsite,
+                  left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
     id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230718.csv')
     id_data.index = id_data['vtx_id']
     sorf_df = sorf_df.merge(id_data[['trans1',
