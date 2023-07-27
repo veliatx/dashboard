@@ -94,10 +94,11 @@ def load_sorf_df():
     sorf_df['screening_phase_id'] = phase_ids
     sorf_df['screening_phase'] = phase_entries
     sorf_df['protein_xrefs'] = protein_xrefs
+    sorf_df['aa_length'] = sorf_df.apply(lambda x: len(x.aa), axis=1)
 
     sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
 
-    cols = ['show_details', 'vtx_id', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
+    cols = ['show_details', 'vtx_id', 'aa_length', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
             'source', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',  
             'transcripts_exact', 'transcripts_overlapping', 'aa', 'nucl', 
             'index_copy', 'genscript_id', 'chr', 'strand', 'start', 'end', 
@@ -112,11 +113,12 @@ def load_sorf_df():
     sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
                   left_index=True, right_index=True, how='left')
     protein_strings = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
-    sorf_df.insert(4, 'aa_length', protein_strings['Sequence'].str.len())
     protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
     sorf_df = sorf_df.merge(protein_cutsite,
                   left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
-    id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230718.csv')
+    
+    id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230723.csv')
+    
     id_data.index = id_data['vtx_id']
     sorf_df = sorf_df.merge(id_data[['trans1',
            'trans2', 'trans3', 'sec1', 'sec2', 'sec3', 'translated_mean',
@@ -126,6 +128,7 @@ def load_sorf_df():
     
     with open('../data/all_secreted_phase1to7.txt', 'r') as f:
         secreted_ids = [i.strip() for i in f.readlines()]
+    
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
 
     
@@ -293,7 +296,13 @@ def sorf_details(sorf_df):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
 
-    df = filter_dataframe(sorf_df)
+    view_cols = list(sorf_df.columns)
+
+    view_cols.remove('phylocsf_vals')
+
+    view_df = sorf_df[view_cols].copy()
+
+    df = filter_dataframe(view_df)
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
@@ -317,10 +326,6 @@ def sorf_details(sorf_df):
             'screening_phase_id': st.column_config.TextColumn(disabled=True),
             'screening_phase': st.column_config.TextColumn(disabled=True),
             'genscript_id': st.column_config.TextColumn(disabled=True),
-            #'orf_xrefs': st.column_config.TextColumn(disabled=True),
-            #'protein_xrefs': st.column_config.TextColumn(disabled=True),
-            #'gene_xrefs': st.column_config.TextColumn(disabled=True),
-
         },
         key='data_editor',
         hide_index=True
@@ -354,8 +359,6 @@ def sorf_details(sorf_df):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
 
-        #link = ucsc_link(selected_row['chromosome'], selected_row['start'], selected_row['end'])
-        #st.write(f"UCSC Browser [link]({link})")
         selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
         selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
@@ -454,7 +457,13 @@ def sorf_details(sorf_df):
 
 def sorf_transcriptome_atlas(sorf_df):
     st.title("sORF Transcriptome Atlas")
-    tcga_data = load_xena_tcga_gtex_target(sorf_df)
+
+    df = filter_dataframe(sorf_df, 'transcriptome')
+
+    st.write(f'{df.shape[0]} sORF entries')
+
+    tcga_data = load_xena_tcga_gtex_target(df)
+
     xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     with st.container():
         col1, col2, col3 = st.columns(3)
