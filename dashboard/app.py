@@ -56,8 +56,8 @@ def load_sorf_df():
     sorf_df['index_copy'] = sorf_df.index
 
     sorf_df['show_details'] = False
-    sorf_df['orf_xrefs'] = sorf_df.apply(lambda x: x.orf_xrefs.split(';'), axis=1)
-    sorf_df['source'] = sorf_df.apply(lambda x: x.source.split(';'), axis=1)
+    sorf_df['orf_xrefs'] = sorf_df.apply(lambda x: tuple(x.orf_xrefs.split(';')), axis=1)
+    sorf_df['source'] = sorf_df.apply(lambda x: tuple(x.source.split(';')), axis=1)
 
     cols = list(sorf_df.columns)
     cols.insert(0, cols.pop(cols.index('show_details')))
@@ -66,10 +66,10 @@ def load_sorf_df():
     phase_entries = []
     protein_xrefs = []
     for i, row in sorf_df.iterrows():
-        protein_xrefs.append([str(px.xref) for px in \
+        protein_xrefs.append(tuple([str(px.xref) for px in \
                                 session.query(ProteinXref)\
                                         .join(Protein, Protein.id == ProteinXref.protein_id)\
-                                        .filter(Protein.aa_seq == row.aa).all()])
+                                        .filter(Protein.aa_seq == row.aa).all()]))
         if row.velia_id.startswith('Phase'):
             phase_ids.append(row.velia_id)
             phase_entries.append(f'Phase {row.velia_id[6]}')
@@ -131,7 +131,8 @@ def load_sorf_df():
     
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
 
-    
+    sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
+    sorf_df['transcripts_overlapping'] = [tuple(i) for i in sorf_df['transcripts_overlapping']]
     return sorf_df
 
 
