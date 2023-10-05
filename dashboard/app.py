@@ -50,8 +50,8 @@ def load_sorf_df():
     sorf_df = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx_id')
 
     # removes any sORFs with multiple VTX IDs (e.g. multi-mappers to the genome)
-    sorf_df = sorf_df[sorf_df['vtx_id'].isin(secreted_vtx_ids)]
-    sorf_df = sorf_df[~sorf_df['vtx_id'].str.contains('\|')]
+#    sorf_df = sorf_df[sorf_df['vtx_id'].isin(secreted_vtx_ids)]
+#    sorf_df = sorf_df[~sorf_df['vtx_id'].str.contains('\|')]
 
     sorf_df['index_copy'] = sorf_df.index
 
@@ -128,7 +128,7 @@ def load_sorf_df():
         secreted_ids = [i.strip() for i in f.readlines()]
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
 
-    
+    sorf_df.to_parquet('sorf_df.parq')
     return sorf_df
 
 
