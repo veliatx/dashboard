@@ -1,6 +1,7 @@
 import json
 import jsonlines
 import os
+import pickle
 import py3Dmol
 
 import matplotlib.pyplot as plt
@@ -21,6 +22,7 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
+from dashboard.data_load import *
 
 from veliadb import base
 from veliadb.base import Orf, Protein, ProteinXref
@@ -28,266 +30,6 @@ import gzip
 
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
-
-
-@st.cache_data()
-def load_protein_feature_string_representations():
-    df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0).T
-    return df
-
-
-@st.cache_data()
-def load_sorf_df():
-    """
-    """
-    session = base.Session()
-
-    sorf_df = pd.read_excel('../data/interim_phase1to6_secreted_hits_20230330.xlsx')
-    secreted_ph7_hit_ids = pd.read_csv('../data/phase_7_secreted_hits.csv', index_col=0)
-
-    secreted_vtx_ids = set(sorf_df['vtx_id']).union(set(secreted_ph7_hit_ids.index))
-
-    sorf_df = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx_id')
-
-    # removes any sORFs with multiple VTX IDs (e.g. multi-mappers to the genome)
-#    sorf_df = sorf_df[sorf_df['vtx_id'].isin(secreted_vtx_ids)]
-#    sorf_df = sorf_df[~sorf_df['vtx_id'].str.contains('\|')]
-
-    sorf_df['index_copy'] = sorf_df.index
-
-    sorf_df['show_details'] = False
-    sorf_df['orf_xrefs'] = sorf_df.apply(lambda x: tuple(x.orf_xrefs.split(';')), axis=1)
-    sorf_df['source'] = sorf_df.apply(lambda x: tuple(x.source.split(';')), axis=1)
-
-    cols = list(sorf_df.columns)
-    cols.insert(0, cols.pop(cols.index('show_details')))
-
-    phase_ids = []
-    phase_entries = []
-    protein_xrefs = []
-    for i, row in sorf_df.iterrows():
-        protein_xrefs.append(tuple([str(px.xref) for px in \
-                                session.query(ProteinXref)\
-                                        .join(Protein, Protein.id == ProteinXref.protein_id)\
-                                        .filter(Protein.aa_seq == row.aa).all()]))
-        if row.velia_id.startswith('Phase'):
-            phase_ids.append(row.velia_id)
-            phase_entries.append(f'Phase {row.velia_id[6]}')
-        elif row.secondary_id.startswith('Phase'):
-            phase_ids.append(row.secondary_id)
-            phase_entries.append(f'Phase {row.secondary_id[6]}')
-        elif any(['Phase' in xref for xref in row.orf_xrefs]):
-            phase_id = [x for x in row.orf_xrefs if x.startswith('Phase')][0]
-            phase_ids.append(phase_id)
-            phase_entries.append(f'Phase {phase_id[6]}')
-        elif row.velia_id.startswith('smORF'):
-            phase_ids.append(row.velia_id)
-            phase_entries.append('Phase 1')
-        else:
-            orf = session.query(Orf).filter(Orf.id == int(row.vtx_id.split('-')[1])).one()
-            phase_ids.append(orf.velia_id)
-            if orf.velia_id.startswith('Phase'):
-                phase_entries.append(f'Phase {orf.velia_id[6]}')
-            else:
-                phase_entries.append('-1')
-
-    sorf_df['screening_phase_id'] = phase_ids
-    sorf_df['screening_phase'] = phase_entries
-    sorf_df['protein_xrefs'] = protein_xrefs
-    sorf_df['aa_length'] = sorf_df.apply(lambda x: len(x.aa), axis=1)
-
-    sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
-
-    cols = ['show_details', 'vtx_id', 'aa_length', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
-            'source', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',  
-            'transcripts_exact', 'transcripts_overlapping', 'aa', 'nucl', 
-            'index_copy', 'genscript_id', 'chr', 'strand', 'start', 'end', 
-            'chrom_starts', 'block_sizes', 'phases',]
-
-    sorf_df = sorf_df[cols]
-    session.close()
-    _, blastp_table = load_mouse_blastp_results()
-    sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    protein_scores = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_scores.csv'), index_col=0)
-
-    sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
-                  left_index=True, right_index=True, how='left')
-    protein_strings = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
-    protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
-    sorf_df = sorf_df.merge(protein_cutsite,
-                  left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
-    
-    id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230723.csv')
-    
-    id_data.index = id_data['vtx_id']
-    sorf_df = sorf_df.merge(id_data[['trans1',
-           'trans2', 'trans3', 'sec1', 'sec2', 'sec3', 'translated_mean',
-           'secreted_mean', 'translated', 'swissprot_isoform', 'ensembl_isoform',
-           'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
-           'phylocsf_vals']], left_index=True, right_index=True, how='left')
-    
-    with open('../data/all_secreted_phase1to7.txt', 'r') as f:
-        secreted_ids = [i.strip() for i in f.readlines()]
-    
-    sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
-
-    sorf_df.to_parquet('sorf_df.parq')
-    sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
-    sorf_df['transcripts_overlapping'] = [tuple(i) for i in sorf_df['transcripts_overlapping']]
-    return sorf_df
-
-
-@st.cache_data()
-def load_kibby_results(sorf_table):
-    kibby = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'kibby.out'), index_col=0)
-    
-    kibby['conservation'] = kibby.conservation.apply(lambda x: list(map(float, x.strip().split(' '))))
-    subdf = sorf_table.loc[sorf_table.index.intersection(kibby.index)]
-    kibby = kibby.loc[subdf.index]
-    kibby.index = sorf_table.loc[kibby.index, 'vtx_id']
-    return kibby
-
-
-@st.cache_data()
-def load_de_results(transcripts):
-    cache_filez = os.listdir(CACHE_DIR)
-    temp_dict = {}
-    for f in cache_filez:
-        if f.endswith('_de.parq') and not (f=='expression_de.parq'):
-            df = pd.read_parquet(os.path.join(CACHE_DIR, f))
-            df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
-            df = df[df['transcript'].isin(transcripts)].copy()
-            temp_dict[f.split('_')[0]] = df
-            
-    de_tables_dict = defaultdict(dict)
-    for c, df in tqdm(temp_dict.items()):
-        for row in df.itertuples():
-            de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
-                                         'log2FC': row.log2FoldChange, 'padj': row.padj}
-    for t, d in de_tables_dict.items():
-        de_tables_dict[t] = pd.DataFrame(d).T
-    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
-    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
-    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
-    return de_tables_dict, tcga_gtex_tissue_metadata
-
-
-@st.cache_data()
-def load_esmfold():
-    """
-    """
-    esmfold = {}
-    with gzip.open('../data/phase1to7_all_esmfold.jsonlines.gz') as fopen:
-        j_reader = jsonlines.Reader(fopen)
-        for l in j_reader:
-            esmfold[l['sequence']] = l
-    return esmfold
-
-
-@st.cache_data()
-def load_xena_tcga_gtex_target(vtx_id_to_transcripts):
-    # Expression is saved as TPM + 0.001 (NOT LOGGED)
-    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
-    xena_metadata = xena_expression[xena_expression.columns[:6]]
-    xena_expression = xena_expression[xena_expression.columns[6:]]
-
-    # vtx_id_to_transcripts = load_jsonlines_table(os.path.join(CACHE_DIR, 'sorf_table.jsonlines'), index_col='vtx')
-    all_transcripts = [i for i in np.concatenate((*vtx_id_to_transcripts['transcripts_exact'],
-                                                  *vtx_id_to_transcripts['transcripts_overlapping']))
-                       if i.startswith('ENST')]
-    de_tables_dict, de_metadata = load_de_results(all_transcripts)
-    de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
-    # Sum expression over each VTX            
-    xena_vtx_sums = xena_expression.T.copy()
-    xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
-    xena_exact_vtx_sums = {}
-    xena_overlapping_vtx_sums = {}
-    transcripts_in_xena = xena_expression.columns
-    for vtx_id, row in vtx_id_to_transcripts.iterrows():
-        if len(transcripts_in_xena.intersection(row['transcripts_exact'])) > 0:
-            xena_exact_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_exact'])].sum(axis=1)
-        if len(transcripts_in_xena.intersection(row['transcripts_overlapping'])) > 0:
-            xena_overlapping_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_overlapping'])].sum(axis=1)
-    xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
-    xena_overlapping_vtx_sums = pd.DataFrame(xena_overlapping_vtx_sums)
-    xena_exact_heatmap_data = process_sums_dataframe_to_heatmap(xena_exact_vtx_sums, xena_metadata)
-    xena_overlapping_heatmap_data = process_sums_dataframe_to_heatmap(xena_overlapping_vtx_sums, xena_metadata)
-    return xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata
-
-
-@st.cache_data()
-def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
-    xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
-
-    xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
-
-    xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
-    transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
-    groups = xena_metadata_df.loc[xena_vtx_sum_df.index][['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis=1)
-    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(groups).aggregate(np.mean)
-
-    threshold = .1
-    mean_vals = xena_vtx_sum_df.max()
-    cols_to_remove = mean_vals[mean_vals < threshold].index
-    xena_vtx_sum_df = xena_vtx_sum_df.drop(cols_to_remove, axis=1)
-    
-    tau_df = xena_vtx_sum_df/xena_vtx_sum_df.max()
-    tau = ((1-tau_df).sum())/(tau_df.shape[0]-1)
-    tau.name = 'tau'
-    xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
-
-    return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
-
-
-@st.cache_data()
-def load_mouse_blastp_results():
-    hits_per_query = defaultdict(list)
-    sorf_table_data = {}
-    with open(os.path.join(CACHE_DIR, 'protein_data', 'blastp.results.json'), 'r') as fopen:
-        blastp = json.load(fopen)
-        blastp = blastp['BlastOutput2']
-    for entry in blastp:
-        entry = entry['report']['results']
-        q = entry['search']['query_title']
-        hits = entry['search']['hits']
-        if len(hits) == 0:
-            # print('No alignments found with mouse')
-            pass
-        else:
-            for h in hits:
-                ids = []
-                for item in h['description']:
-                    ids.append(item['accession'])
-                alignment = h['hsps']
-                alignment = alignment[0]
-                align_str = '  \n'.join([h['description'][0]['title'], alignment['qseq'], alignment['midline'], alignment['hseq']])
-                alignment['hit_ids'] = ';'.join(ids)
-                alignment['alignment'] = align_str
-                hits_per_query[q].append(alignment)
-                if isinstance(alignment, dict):
-                    best_hit = alignment
-                else:
-                    best_hit = pd.DataFrame(alignment).sort_values('score', ascending=False).iloc[0]
-                best_hit_description = [h for h in hits if h['num'] == best_hit['num']][0]['description'][0]
-                sorf_table_data[q] = {'blastp_score': best_hit['score'],
-                 'blastp_query_coverage': best_hit['align_len']/len(best_hit['qseq']),
-                 'blastp_align_length': best_hit['align_len'],
-                 'blastp_gaps': best_hit['gaps'],
-                 'blastp_align_identity': best_hit['identity']/best_hit['align_len'],
-                'blastp_subject': best_hit_description['id'],
-                'blastp_hit_description': best_hit_description['title']
-                }
-    return hits_per_query, sorf_table_data
-
-
-@st.cache_data()
-def load_phylocsf_data():
-    pcsf = pd.read_csv(f"../data/interim_phase1to7_all_phylocsf-vals_20230628.csv", index_col=0)
-    pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
-    pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
-           'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
-    return pcsf
-
 
 @st.cache_data()
 def convert_df(df):
@@ -344,7 +86,7 @@ def sorf_details(sorf_df):
 
     # Load data
     tcga_data = load_xena_tcga_gtex_target(sorf_df)
-    xena_metadata, xena_expression, vtx_id_to_transcripts, _, _, de_tables_dict, de_metadata = tcga_data
+    xena_metadata, xena_expression, _, _, de_tables_dict, de_metadata = tcga_data
     esmfold = load_esmfold()
     blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_df)
@@ -361,8 +103,8 @@ def sorf_details(sorf_df):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
 
-        selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-        selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+        selected_transcripts_exact = sorf_df.loc[vtx_id, 'transcripts_exact']
+        selected_transcripts_overlapping = sorf_df.loc[vtx_id, 'transcripts_overlapping']
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         value = None
@@ -372,7 +114,7 @@ def sorf_details(sorf_df):
 
             with col1:
                 title = f'Transcript Specific Expression - {vtx_id}'
-                option, events = plotting.expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title)
+                option, events = plotting.expression_heatmap_plot(vtx_id, sorf_df, xena_expression, xena_metadata, title)
                 
                 if option:
                     value = st_echarts(option, height="1000px", events=events, renderer='svg')
@@ -466,7 +208,7 @@ def sorf_transcriptome_atlas(sorf_df):
 
     tcga_data = load_xena_tcga_gtex_target(df)
 
-    xena_metadata, xena_expression, vtx_id_to_transcripts, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
+    xena_metadata, xena_expression, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata = tcga_data
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -544,7 +286,7 @@ def main():
         "sORF Genome Browser": genome_browser,
         # "sORF Selector": selector,
     }
-    sorf_df = load_sorf_df()
+    sorf_df = load_sorf_df_conformed()
   
     tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 

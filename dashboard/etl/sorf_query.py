@@ -272,6 +272,30 @@ def load_jsonlines_table(path_to_file, index_col = None):
     if index_col is not None:
         df.index = df[index_col]
     return df
+
+def parse_sorf_phase(sorf_df):
+    for i, row in sorf_df.itertuples():
+        if row.velia_id.startswith('Phase'):
+            phase_ids.append(row.velia_id)
+            phase_entries.append(f'Phase {row.velia_id[6]}')
+        elif row.secondary_id.startswith('Phase'):
+            phase_ids.append(row.secondary_id)
+            phase_entries.append(f'Phase {row.secondary_id[6]}')
+        elif any(['Phase' in xref for xref in row.orf_xrefs]):
+            phase_id = [x for x in row.orf_xrefs if x.startswith('Phase')][0]
+            phase_ids.append(phase_id)
+            phase_entries.append(f'Phase {phase_id[6]}')
+        elif row.velia_id.startswith('smORF'):
+            phase_ids.append(row.velia_id)
+            phase_entries.append('Phase 1')
+        else:
+            orf = session.query(Orf).filter(Orf.id == int(row.vtx_id.split('-')[1])).one()
+            phase_ids.append(orf.velia_id)
+            if orf.velia_id.startswith('Phase'):
+                phase_entries.append(f'Phase {orf.velia_id[6]}')
+            else:
+                phase_entries.append('-1')
+    return phase_ids, phase_entries
                 
 
 
