@@ -108,7 +108,7 @@ if __name__ == '__main__':
     sorf_df['transcripts_overlapping'] = [tuple(i) for i in sorf_df['transcripts_overlapping']]
     sorf_df.to_parquet(os.path.join(CACHE_DIR, 'sorf_df.parq'))
     # Done formatting
-    
+    # Start massaging expression data
     transcripts_to_map = np.concatenate((*sorf_table['transcripts_exact'], *sorf_table['transcripts_overlapping']))
     transcripts_to_map = [str(i) for i in transcripts_to_map]
     xena, metadata, tissue_pairs = load_xena_transcripts_with_metadata_from_s3(transcripts_to_map)
@@ -126,6 +126,38 @@ if __name__ == '__main__':
     de_genes = read_tcga_de_from_s3('velia-analyses-dev',
                      'VAP_20230329_tcga_differential_expression', output_dir = OUTPUT_DIR)
     tissue_pairs.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
+    
+    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena.parq'))
+    xena_metadata = xena_expression[xena_expression.columns[:6]]
+    xena_expression = xena_expression[xena_expression.columns[6:]]
+
+    all_transcripts = [i for i in np.concatenate((*vtx_id_to_transcripts['transcripts_exact'],
+                                                  *vtx_id_to_transcripts['transcripts_overlapping']))
+                       if i.startswith('ENST')]
+    de_tables_dict, de_metadata = load_de_results(all_transcripts)
+    de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
+    # Sum expression over each VTX            
+    xena_vtx_sums = xena_expression.T.copy()
+    xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
+    xena_exact_vtx_sums = {}
+    xena_overlapping_vtx_sums = {}
+    transcripts_in_xena = xena_expression.columns
+    for vtx_id, row in tqdm(vtx_id_to_transcripts.iterrows()):
+        if len(transcripts_in_xena.intersection(row['transcripts_exact'])) > 0:
+            xena_exact_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_exact'])].sum(axis=1)
+        if len(transcripts_in_xena.intersection(row['transcripts_overlapping'])) > 0:
+            xena_overlapping_vtx_sums[vtx_id] = xena_expression[transcripts_in_xena.intersection(row['transcripts_overlapping'])].sum(axis=1)
+    xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
+    xena_overlapping_vtx_sums = pd.DataFrame(xena_overlapping_vtx_sums)
+    xena_exact_heatmap_data = process_sums_dataframe_to_heatmap(xena_exact_vtx_sums, xena_metadata)
+    xena_overlapping_heatmap_data = process_sums_dataframe_to_heatmap(xena_overlapping_vtx_sums, xena_metadata)
+    xena_metadata.to_parquet(os.path.join(CACHE_DIR, 'xena_metadata.parq'))
+    xena_expression.to_parquet(os.path.join(CACHE_DIR, 'xena_app.parq'))
+    pickle.dump(xena_exact_heatmap_data, open(os.path.join(CACHE_DIR, 'xena_exact_heatmap.pkl'), 'wb'))
+    pickle.dump(xena_overlapping_heatmap_data, open(os.path.join(CACHE_DIR, 'xena_overlapping_heatmap.pkl'), 'wb'))
+    pickle.dump(de_tables_dict, open(os.path.join(CACHE_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
+    de_metadata.to_parquet(os.path.join(CACHE_DIR, 'xena_de_metadata.parq'))
+    # Finish massaging expression data
     
     with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_table.iterrows():

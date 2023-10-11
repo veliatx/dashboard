@@ -23,6 +23,7 @@ from scipy.cluster.hierarchy import linkage, leaves_list
 from dashboard.util import filter_dataframe, convert_list_string
 from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import plotting, description
+from dashboard import tabs
 
 
 
@@ -55,7 +56,7 @@ def load_kibby_results(sorf_table):
     return kibby
 
 
-@st.cache_data()
+# @st.cache_data()
 def load_de_results(transcripts):
     cache_filez = os.listdir(CACHE_DIR)
     temp_dict = {}
