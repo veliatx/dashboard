@@ -23,7 +23,7 @@ from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string, convert_df
 from dashboard.data_load import *
 
-def sorf_details(sorf_df, tcga_data):
+def sorf_details(sorf_df, tcga_data, autoimmune_data):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
     
@@ -41,7 +41,7 @@ def sorf_details(sorf_df, tcga_data):
     elif filter_option == 'Translated sORFs':
         df = df[df['translated']]
 
-    df = filter_dataframe(df)
+    df = filter_dataframe(df, 'explorer_filter')
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
@@ -81,6 +81,7 @@ def sorf_details(sorf_df, tcga_data):
 
     # Load data
     xena_metadata, xena_expression, _, _, de_tables_dict, de_metadata = tcga_data
+    autoimmune_expression, autoimmune_metadata = autoimmune_data
     esmfold = load_esmfold()
     blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_df)
@@ -98,7 +99,7 @@ def sorf_details(sorf_df, tcga_data):
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
 
         selected_transcripts_exact = sorf_df.loc[vtx_id, 'transcripts_exact']
-        selected_transcripts_overlapping = sorf_df.loc[vtx_id, 'transcripts_overlapping']
+        selected_transcripts_overlapping = []#sorf_df.loc[vtx_id, 'transcripts_overlapping']
         selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
         xena_overlap = xena_expression.columns.intersection(selected_transcripts)
         value = None
@@ -107,13 +108,32 @@ def sorf_details(sorf_df, tcga_data):
             col1, col2 = st.columns(2)
 
             with col1:
-                title = f'Transcript Specific Expression - {vtx_id}'
-                option, events = plotting.expression_heatmap_plot(vtx_id, sorf_df, xena_expression, xena_metadata, title)
+                title = f'TCGA/GTEx Transcript Specific Expression - {vtx_id}'
+                echart_option_tcga, events_tcga = plotting.expression_heatmap_plot(vtx_id, sorf_df, xena_expression, xena_metadata, title, selected_transcripts)
                 
-                if option:
-                    value = st_echarts(option, height="1000px", events=events, renderer='svg')
+                if echart_option_tcga:
+                    value = st_echarts(echart_option_tcga,
+                                       height="900px", 
+                                       events=events_tcga, 
+                                       renderer='svg',
+                                    #    key = 'tcga_echart_heatmap_explorer'
+                                       )
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+                    
+                st.title('Autoimmune Expression Atlas')
+                title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
+                echart_option_ai, events_ai = plotting.expression_heatmap_plot(vtx_id, sorf_df, autoimmune_expression, autoimmune_metadata, title, selected_transcripts, median_groups=False)
+                if echart_option_ai:
+                    value = st_echarts(echart_option_ai, 
+                                       height="900px", 
+                                    #    width="600px",
+                                       events=events_ai, 
+                                       renderer='svg',
+                                    #    key = 'autoimmune_echart_heatmap_explorer'
+                                       )
+                else:
+                    st.write('No transcripts in Velia AI found containing this sORF')
 
             with col2:
 
@@ -129,7 +149,7 @@ def sorf_details(sorf_df, tcga_data):
 
                     chart_title = f'Differential Expression - {selected_transcript[0]}'
 
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot(selected_transcript, 
+                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot_tcga(selected_transcript, 
                                                                                                            de_tables_dict, de_metadata,
                                                                                                            chart_title)
                                                                                                     

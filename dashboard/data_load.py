@@ -25,10 +25,19 @@ from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import plotting, description
 from dashboard import tabs
 
-
-
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
+
+
+@st.cache_data()
+def load_autoimmune_atlas(sorf_df):
+    exp = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq")
+    exp = exp.groupby([x.split('.')[0] if x.startswith('ENST') else x for x in exp.index]).mean()
+    meta = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_metadata.parq")
+    meta['dashboard_group'] = meta['atlas_group']
+    
+    return exp.T, meta
+
 
 @st.cache_data()
 def load_sorf_df_conformed():
@@ -40,10 +49,10 @@ def load_protein_feature_string_representations():
     df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0).T
     return df
 
-@st.cache_data()
-def load_expression_atlas_v1():
-    df = pd.read_parquet('s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq')
-    return df
+# @st.cache_data()
+# def load_expression_atlas_v1():
+#     df = pd.read_parquet('s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq')
+#     return df
 
 @st.cache_data()
 def load_kibby_results(sorf_table):
@@ -100,6 +109,7 @@ def load_xena_tcga_gtex_target(vtx_id_to_transcripts):
     xena_overlapping_heatmap_data = pickle.load(open(os.path.join(CACHE_DIR, 'xena_overlapping_heatmap.pkl'), 'rb'))
     de_tables_dict = pickle.load(open(os.path.join(CACHE_DIR, 'xena_de_tables_dict.pkl'), 'rb'))
     de_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_de_metadata.parq'))
+    xena_metadata['dashboard_group'] = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
     return xena_metadata, xena_expression, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata
 
 

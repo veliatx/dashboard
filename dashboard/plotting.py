@@ -34,7 +34,7 @@ def color_protein_terminal_ends(aa_seq, pdb_string):
     return '\n'.join(parts)
 
 
-def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_dict, de_metadata, title):
+def plot_transcripts_differential_expression_barplot_tcga(transcript_ids, de_tables_dict, de_metadata, title):
     """
     Parameters
     ----------
@@ -57,7 +57,7 @@ def plot_transcripts_differential_expression_barplot(transcript_ids, de_tables_d
     result['# DE Transcripts'] = [de.loc[i] for i in result.index]
     result['GTEx Normal Tissue'] = de_metadata['GTEx Tissue Type']
     # Define the bar plot using plotly express
-    return bar_plot_expression_groups(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
+    return bar_plot_expression_groups_tcga(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
 
 
 def expression_de_to_echarts_data(expression_values, de_values, color):
@@ -79,7 +79,7 @@ def expression_de_to_echarts_data(expression_values, de_values, color):
     return data
 
 
-def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata, title):
+def bar_plot_expression_groups_tcga(dataframe, group_name, group_members, de_metadata, title):
     """
     """
     if dataframe.shape[0]>0:
@@ -156,28 +156,99 @@ def bar_plot_expression_groups(dataframe, group_name, group_members, de_metadata
 
     return option
 
+def bar_plot_expression_group_autoimmune(dataframe, group_name, group_members, de_metadata, title):
+    """
+    """
 
-def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena_metadata, title):
+    
+    dataframe.sort_values(by='Cancer', inplace=True)
+    tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
+    option = {
+      'title': {'text': title},
+      'tooltip': {
+          "trigger": 'axis',
+          #"formatter": JsCode("function (params) {console.log(params)}").js_code,
+          "formatter": JsCode("function (params) {var cols = " + json.dumps(tcga_code_to_description) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+      },
+      'legend': {
+          'data': group_members,
+          'orient': 'vertical',
+          'right': -5,
+          'top': 'center'
+          },
+      'toolbox': {
+        'show': True,
+        'feature': {
+          'dataView': { 'show': True, 'readOnly': False },
+          'restore': { 'show': True },
+          'saveAsImage': { 'show': True }
+        }
+      },
+      'calculable': True,
+      'yAxis': [
+        {
+          'name': 'Cancer Types',
+          'nameLocation': 'middle',
+          'nameGap': 50,
+          'type': 'category',
+          'data': list(dataframe[group_name].values),
+          'axisLabel': { 'interval': 0}#, 'rotate': 90}
+        }
+      ],
+      'xAxis': [
+        {'name': 'Approximate TPM \n (Transcripts in bold are DE with FDR < 1e-5 and abs(LFC) > 1)',
+         'nameLocation': 'middle',
+         'nameGap': 30,
+         'type': 'value'}
+      ],
+        'color': ['#237c94', '#d62418'],
+      'series': [
+        {
+          'name': group_members[0],
+          'type': 'bar',
+          'data': expression_de_to_echarts_data(dataframe[group_members[0]], dataframe['DE'], 'blue')
+        },
+        {
+          'name': group_members[1],
+          'type': 'bar',
+          'data': expression_de_to_echarts_data(dataframe[group_members[1]], dataframe['DE'], 'red')
+        },
+      ],
+    'grid': {
+          'left': 70,
+          'top': 50,
+          'right': 120,
+          'bottom': 80
+        }
+    }
+
+    return option
+
+
+def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, expression_df, metadata_df, title, selected_transcripts, median_groups=True):
     """
     """
     # Plot transcript expression levels
-    selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-    selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
-    selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-    xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+    selected_expression = expression_df[expression_df.columns.intersection(selected_transcripts)].copy()
+    # selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
+    # selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
+    # selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
+    # overlap = expression_df.columns.intersection(selected_transcripts)
     set2 = sns.color_palette('Set2', n_colors=2)
     
-    col_colors = [set2[0] if i in selected_transcripts_exact else set2[1] for i in xena_overlap]
+    col_colors = [set2[0] for i in selected_expression]
     
-    selected_expression = xena_expression[xena_overlap]
-    groups = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-    grouped_exp_df = selected_expression.groupby(groups).median()
+    if median_groups:
+        groups = metadata_df['dashboard_group']
+        grouped_exp_df = selected_expression.groupby(groups).median()
+    else:
+        grouped_exp_df = selected_expression
     
     if grouped_exp_df.shape[1] == 0:
         return None, None
     elif grouped_exp_df.shape[1] == 1:
         plot_df = grouped_exp_df
-        plot_df.sort_values(by=xena_overlap[0], inplace=True)
+        plot_df.sort_values(by=selected_transcripts[0], inplace=True)
         plot_df = plot_df.T
     else:
         row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
@@ -197,62 +268,55 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
     
-    js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
     
-    updated_row_names = []
-    for r in row_names:
-        if r in selected_transcripts_exact:
-            updated_row_names.append(f'**{r}')
-        else:
-            updated_row_names.append(r)
+    
+    # updated_row_names = []
+    # for r in row_names:
+    #     if r in selected_transcripts_exact:
+    #         updated_row_names.append(f'**{r}')
+    #     else:
+    #         updated_row_names.append(r)
     max_contrast = grouped_exp_df.max().max()
     if max_contrast < 5:
         max_contrast = 5
+    option, events = heatmap_plot(data, row_names, col_names, title)
+    option['visualMap']['max'] = max_contrast
+    return option, events
+
+
+def heatmap_plot(data, row_names, col_names, title, x_axis_interval = 0, y_axis_interval = 0):
+    js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
     option = {
         "title": {"text": title},
         "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
         },
         "xAxis": {
             "type": "category", 
-            "data": updated_row_names, 
+            "data": row_names, 
             "axisLabel": {
                 "fontSize": 10,
                 "rotate": -90,
-                "interval": 0,
+                "interval": x_axis_interval,
             }
             },
         "yAxis": {
             "type": "category", 
             "data": col_names,
             "axisLabel": {
-                "fontSize": 10,
+                "fontSize": 11,
                 "width": 0,
-                "interval": 0,
+                "interval": y_axis_interval,
             } 
             },
         "visualMap": {
-            "min": 0.25,
-            "max": max_contrast,
+            "min": 0,
+            "max": 12,
             "calculable": True,
             "realtime": False,
-            #"inRange": {
-            #    "color": [
-            #        '#5782bc', 
-            #        '#7e9ac2', 
-            #        '#a3b4cd', 
-            #        '#cad0dd', 
-            #        '#efeef1', 
-            #        '#f7eae8', 
-            #        '#e6c5c3', 
-            #        '#d7a09d', 
-            #        '#c87e7b', 
-            #        '#b95b5a'
-            #    ]
-            #},
             "orient": 'vertical',
             "left": '90%',
-            "top": 'center'
+            "top": 'center',
         },
         'toolbox': {
             'show': True,
@@ -263,16 +327,14 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
             }
         },
         "grid": {
-            "left": '30%',
-            "bottom": '15%'
+            "left": 0,
+            "containLabel": True
         },
         "series": [
             {
                 "name": "Log2(TPM+1)",
                 "type": "heatmap",
                 "data": data,
-                "borderColor": '#333',
-                "borderWidth": 1,
                 "emphasis": {
                     "itemStyle": {
                         "borderColor": '#333',
@@ -285,14 +347,12 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, xena_expression, xena
                 "animation": False,
             }
         ],
-
     }
     
     events = {
         "click": "function(params) { console.log(params.name); return params.name }",
         "dblclick": "function(params) { return [params.type, params.name, params.value] }"
     }
-
     return option, events
 
 
@@ -320,81 +380,8 @@ def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df):
     
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
-
-    js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
-
-    option = {
-        "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
-        },
-        "xAxis": {
-            "type": "category", 
-            "data": row_names, 
-            "axisLabel": {
-                "fontSize": 10,
-                "rotate": -90,
-                "interval": 1,
-            }
-            },
-        "yAxis": {
-            "type": "category", 
-            "data": col_names,
-            "axisLabel": {
-                "fontSize": 11,
-                "width": 0,
-                "interval": 0,
-            } 
-            },
-        "visualMap": {
-            "min": 0,
-            "max": 12,
-            "calculable": True,
-            "realtime": False,
-            "orient": 'vertical',
-            "left": '95%',
-            "top": 'center',
-            #"inRange": {
-            #    "color": [
-            #        '#5782bc', 
-            #        '#7e9ac2', 
-            #        '#a3b4cd', 
-            #        '#cad0dd', 
-            #        '#efeef1', 
-            #        '#f7eae8', 
-            #        '#e6c5c3', 
-            #        '#d7a09d', 
-            #        '#c87e7b', 
-            #        '#b95b5a'
-            #    ]
-            #},
-        },
-        "grid": {
-            "left": '20%',
-        },
-        "series": [
-            {
-                "name": "Log2(TPM+1)",
-                "type": "heatmap",
-                "data": data,
-                "emphasis": {
-                    "itemStyle": {
-                        "borderColor": '#333',
-                        "borderWidth": 1,
-                        "shadowBlur": 10,
-                        "shadowColor": 'rgba(0, 0, 0, 0.5)'
-                    }
-                },
-                "progressive": 1000,
-                "animation": False,
-            }
-        ],
-    }
-    
-    events = {
-        "click": "function(params) { console.log(params.name); return params.name }",
-        "dblclick": "function(params) { return [params.type, params.name, params.value] }"
-    }
-
+    title = "TCGA/GTEx Expression Atlas"   
+    option, events = heatmap_plot(data, row_names, col_names, title)
     return option, events
 
 

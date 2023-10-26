@@ -86,6 +86,10 @@ def create_comparison_groups_xena_tcga_vs_normal(xena, tissue_pairs):
                                        'GTEx Tissue': row['GTEx Tissue Type'], 'TCGA Cancer': row['Description']}
     return groups
 
+
 def load_ccle_from_s3(path_to_ccle):
     pass
-    
+
+
+def load_autoimmune_atlas(path_to_autoimmune_root):
+        
