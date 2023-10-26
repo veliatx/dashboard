@@ -91,5 +91,89 @@ def load_ccle_from_s3(path_to_ccle):
     pass
 
 
-def load_autoimmune_atlas(path_to_autoimmune_root):
+from sqlalchemy import create_engine, Column, Integer, String, Float
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import boto3
+
+Base = declarative_base()
+
+
+
+class TranscriptDE(Base):
+    __tablename__ = 'transcript_differential_expression'
+    id = Column(Integer, autoincrement = True, primary_key = True)
+    transcript_id = Column(String, primary_key=False)
+    reference_mean = Column(Float)
+    group_mean = Column(Float)
+    log2fc = Column(Float)
+    log10padj = Column(Float)
+    log10pval = Column(Float)
+    contrast = Column(String)
+    study = Column(String)
+    
+    
+def load_autoimmune_de_tables_from_s3(bucket = 'velia-piperuns-dev', root_path = 'expression_atlas/v1/'):
+    s3 = boto3.client('s3') 
+    # List the objects in the specified bucket and prefix, without descending into subdirectories
+    response = s3.list_objects_v2(
+        Bucket=bucket,
+        Prefix=root_path, 
+        Delimiter = '/',
+        MaxKeys = 21474837)
+
+    # Pattern to match
+    pattern = '*_transcript_*.csv'
+
+    de_results = {}
+    for p in tqdm(response['CommonPrefixes']):
+        p = p['Prefix']
+        files = s3.list_objects_v2(
+                        Bucket='velia-piperuns-dev',
+                        Prefix=f"{p}de_results/{p.split('/')[-2]}_transcript_", 
+                        MaxKeys = 21474837)
+        # if len(files) == 1:
+        for f in files.get('Contents', []):
+            pth = f"s3://velia-piperuns-dev/{f['Key']}"
+            de_results[pth.split('/')[-1]] = pd.read_csv(pth, index_col=0)
         
+    return de_results
+    
+def create_de_database(db_address):
+    engine = create_engine(db_address)
+    Base.metadata.create_all(engine)
+
+    session = sessionmaker(bind=engine)()
+    transcripts_to_add = []
+    atlas_sample_expression_tables = []
+    for n, df in load_autoimmune_de_tables_from_s3().items():
+        contrast = n.replace('.csv', '').replace('_transcript_', '-')
+        study = contrast.split('-')[0]
+        contrast = contrast.replace(study+'-', '')
+        for row in tqdm(df.itertuples()):
+            t = TranscriptDE(transcript_id = row.Index, 
+                        reference_mean = row._10, 
+                        group_mean = row._9,
+                        log2fc = row.log2FoldChange, 
+                        log10padj = np.log10(row.padj), 
+                        log10pval = np.log10(row.pvalue),
+                        contrast = contrast,
+                        study = study
+                        )
+            session.add(t)
+        sample_value_column_names = df.columns[10:]
+        sample_names = [i.split('_')[-1] for i in sample_value_column_names]
+        group = ['CONTROL' if '_CONTROL' in i else 'DISEASE' for i in sample_value_column_names]
+        multi_index = pd.MultiIndex.from_arrays([[study]*len(sample_value_column_names), sample_names, [contrast]*len(sample_value_column_names), group],
+                                                names=('study', 'sample', 'contrast', 'group'))
+        sample_expression = pd.DataFrame(df[sample_value_column_names].values, columns = multi_index, index = df.index)
+        atlas_sample_expression_tables.append(sample_expression)
+    atlas_sample_expression_tables = pd.concat(atlas_sample_expression_tables, axis=1, join='outer')
+    atlas_sample_expression_tables.to_sql('sample_expression',
+                                          con=engine,
+                                          index=False,
+                                          if_exists='replace')
+
+    
+    session.commit()
+    return session, atlas_sample_expression_tables

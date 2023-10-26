@@ -158,7 +158,6 @@ if __name__ == '__main__':
     pickle.dump(de_tables_dict, open(os.path.join(CACHE_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
     de_metadata.to_parquet(os.path.join(CACHE_DIR, 'xena_de_metadata.parq'))
     # Finish massaging expression data
-    
     with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_table.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")

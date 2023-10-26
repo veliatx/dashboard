@@ -7,6 +7,27 @@ from pandas.api.types import (
 
 import pandas as pd
 import streamlit as st
+from dashboard.etl.transcript_features import Base, TranscriptDE
+from sqlalchemy import create_engine, and_, or_
+from sqlalchemy.orm import sessionmaker
+
+@st.cache_data()
+def query_transcripts(transcripts, 
+                      db_address, 
+                      log10padj_threshold = -2, 
+                      minimum_expression = 2):
+    if isinstance(transcripts, str):
+        transcripts = [transcripts]
+    engine = create_engine(db_address)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    de_filter = session.query(TranscriptDE).filter(and_(TranscriptDE.log10padj <= log10padj_threshold, 
+                                                        or_(TranscriptDE.group_mean>minimum_expression, TranscriptDE.reference_mean>minimum_expression), 
+                                                        TranscriptDE.transcript_id.in_(transcripts)
+                                                    )).statement
+    qreturn = pd.read_sql(de_filter, session.bind)
+    return qreturn
+    
 
 @st.cache_data()
 def convert_df(df):

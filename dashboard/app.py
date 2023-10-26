@@ -64,7 +64,6 @@ def main():
         dashboard.tabs.expression_heatmap.tcga_page(sorf_df, tcga_data)
     # with tab3:
         # dashboard.tabs.expression_heatmap.autoimmune_page(sorf_df, autoimmune_data)
-
     with tab3:
         genome_browser()
         
