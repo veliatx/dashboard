@@ -27,8 +27,6 @@ import dashboard.tabs.riboseq_atlas
 import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.expression_heatmap
 
-from veliadb import base
-from veliadb.base import Orf, Protein, ProteinXref
 import gzip
 
 def genome_browser():
@@ -53,15 +51,15 @@ def main():
         "sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page
     }
     sorf_df = load_sorf_df_conformed()
-    tcga_data = load_xena_tcga_gtex_target(sorf_df)
-    autoimmune_data = load_autoimmune_atlas(sorf_df)
+    # tcga_data = load_xena_tcga_gtex_target(sorf_df)
+    # autoimmune_data = load_autoimmune_atlas(sorf_df)
     tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
 
     with tab1:
-        dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df, tcga_data, autoimmune_data)
+        dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df)
 
     with tab2:
-        dashboard.tabs.expression_heatmap.tcga_page(sorf_df, tcga_data)
+        dashboard.tabs.expression_heatmap.tcga_page(sorf_df)
     # with tab3:
         # dashboard.tabs.expression_heatmap.autoimmune_page(sorf_df, autoimmune_data)
     with tab3:

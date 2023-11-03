@@ -62,7 +62,7 @@ def parallel_sorf_query(vtx_id):
     nt = current_orf.nt_seq
     aa = current_orf.aa_seq
     r_internal = find_seq_substring(nt, transcripts)
-    transcripts_exact = [i.split('|')[0].split('.')[0] for i in r_internal if i.startswith('ENST')]
+    transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
     overlapping_tids = query_overlapping_transcripts(current_orf, session)
     overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
     attributes = parse_orf(current_orf, session)
@@ -273,8 +273,10 @@ def load_jsonlines_table(path_to_file, index_col = None):
         df.index = df[index_col]
     return df
 
-def parse_sorf_phase(sorf_df):
-    for i, row in sorf_df.itertuples():
+def parse_sorf_phase(sorf_df, session):
+    phase_ids = []
+    phase_entries = []
+    for row in sorf_df.itertuples():
         if row.velia_id.startswith('Phase'):
             phase_ids.append(row.velia_id)
             phase_entries.append(f'Phase {row.velia_id[6]}')

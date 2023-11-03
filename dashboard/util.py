@@ -7,26 +7,33 @@ from pandas.api.types import (
 
 import pandas as pd
 import streamlit as st
-from dashboard.etl.transcript_features import Base, TranscriptDE
-from sqlalchemy import create_engine, and_, or_
-from sqlalchemy.orm import sessionmaker
+import sqlite3
 
-@st.cache_data()
-def query_transcripts(transcripts, 
+def strip_ensembl_versions(transcript_ids):
+    return [i.split('.')[0] if i.startswith('ENST') else i for i in transcript_ids]
+
+def query_de_transcripts(transcript_id, 
                       db_address, 
                       log10padj_threshold = -2, 
                       minimum_expression = 2):
-    if isinstance(transcripts, str):
-        transcripts = [transcripts]
-    engine = create_engine(db_address)
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
-    de_filter = session.query(TranscriptDE).filter(and_(TranscriptDE.log10padj <= log10padj_threshold, 
-                                                        or_(TranscriptDE.group_mean>minimum_expression, TranscriptDE.reference_mean>minimum_expression), 
-                                                        TranscriptDE.transcript_id.in_(transcripts)
-                                                    )).statement
-    qreturn = pd.read_sql(de_filter, session.bind)
-    return qreturn
+    # if isinstance(transcripts, str):
+    #     transcripts = [transcripts]
+    con = sqlite3.connect(db_address)
+    query = """SELECT *
+    FROM transcript_de
+    WHERE transcript_de.transcript_id = '{0}'
+    AND transcript_de.log10_padj <= {1}
+    AND (transcript_de.case_mean >= {2} OR transcript_de.control_mean >= {2})
+    """.format(transcript_id, log10padj_threshold, minimum_expression)
+    return pd.read_sql(query, con)
+
+def query_transcript_tpms(transcript_id_list, 
+                          db_address):
+    con = sqlite3.connect(db_address)
+    query = """SELECT * FROM transcript_tpm
+                WHERE transcript_tpm.transcript_id IN ({0});
+                """.format(', '.join(transcript_id_list))
+    return pd.read_sql(query, con)
     
 
 @st.cache_data()

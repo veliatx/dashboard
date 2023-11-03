@@ -25,19 +25,31 @@ from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import plotting, description
 from dashboard import tabs
 
+import pyarrow.parquet as pq
+
 CACHE_DIR = '../cache'
 TPM_DESEQ2_FACTOR = 80
 
 
 @st.cache_data()
-def load_autoimmune_atlas(sorf_df):
-    exp = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq")
-    exp = exp.groupby([x.split('.')[0] if x.startswith('ENST') else x for x in exp.index]).mean()
+def load_autoimmune_atlas():
+#     exp = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq")
+#     exp = exp.groupby([x.split('.')[0] if x.startswith('ENST') else x for x in exp.index]).mean()
     meta = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_metadata.parq")
     meta['dashboard_group'] = meta['atlas_group']
-    
-    return exp.T, meta
+    return meta
 
+# def load_autoimmune_expression_for_transcript(transcript_id):
+#     log10padj_threshold = -2
+#     minimum_expression = 2
+#     con = sqlite3.connect('../data/autoimmune_expression_atlas_v1.db')
+#     query = """SELECT *
+#     FROM transcript_de
+#     WHERE transcript_de.transcript_id = '{0}'
+#     AND transcript_de.log10_padj <= {1}
+#     AND (transcript_de.case_mean >= {2} OR transcript_de.control_mean >= {2})
+#     """.format(transcript_id, log10padj_threshold, minimum_expression)
+#     return pd.read_sql(query, con)
 
 @st.cache_data()
 def load_sorf_df_conformed():
@@ -48,11 +60,6 @@ def load_sorf_df_conformed():
 def load_protein_feature_string_representations():
     df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0).T
     return df
-
-# @st.cache_data()
-# def load_expression_atlas_v1():
-#     df = pd.read_parquet('s3://velia-athena-dev/expression_atlas_v1_expression_per_group.parq')
-#     return df
 
 @st.cache_data()
 def load_kibby_results(sorf_table):
@@ -65,29 +72,46 @@ def load_kibby_results(sorf_table):
     return kibby
 
 
-# @st.cache_data()
-def load_de_results(transcripts):
-    cache_filez = os.listdir(CACHE_DIR)
-    temp_dict = {}
-    for f in cache_filez:
-        if f.endswith('_de.parq') and not (f=='expression_de.parq'):
-            df = pd.read_parquet(os.path.join(CACHE_DIR, f))
-            df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
-            df = df[df['transcript'].isin(transcripts)].copy()
-            temp_dict[f.split('_')[0]] = df
+# # @st.cache_data()
+# def load_de_results(transcripts):
+#     cache_filez = os.listdir(CACHE_DIR)
+#     temp_dict = {}
+#     for f in cache_filez:
+#         if f.endswith('_de.parq') and not (f=='expression_de.parq'):
+#             df = pd.read_parquet(os.path.join(CACHE_DIR, f))
+#             df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
+#             df = df[df['transcript'].isin(transcripts)].copy()
+#             temp_dict[f.split('_')[0]] = df
             
-    de_tables_dict = defaultdict(dict)
-    for c, df in tqdm(temp_dict.items()):
-        for row in df.itertuples():
-            de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
-                                         'log2FC': row.log2FoldChange, 'padj': row.padj}
-    for t, d in de_tables_dict.items():
-        de_tables_dict[t] = pd.DataFrame(d).T
-    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
-    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
-    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
-    return de_tables_dict, tcga_gtex_tissue_metadata
+#     de_tables_dict = defaultdict(dict)
+#     for c, df in tqdm(temp_dict.items()):
+#         for row in df.itertuples():
+#             de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
+#                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
+#     for t, d in de_tables_dict.items():
+#         de_tables_dict[t] = pd.DataFrame(d).T
+#     tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
+#     tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
+#     tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
+#     return de_tables_dict, tcga_gtex_tissue_metadata
 
+@st.cache_data()
+def load_xena_transcripts(transcripts):
+    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_app.parq'), columns = transcripts)    
+    return xena_expression
+
+@st.cache_data()
+def load_xena_metadata():
+    xena_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_metadata.parq'))
+    xena_metadata['dashboard_group'] = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
+    parq_metadata = pq.read_metadata(os.path.join(CACHE_DIR, 'xena_app.parq'))
+    xena_transcripts = set(parq_metadata.schema.names)
+    return xena_metadata, xena_transcripts
+
+@st.cache_data()
+def load_xena_heatmap_data():
+    xena_exact_heatmap_data = pickle.load(open(os.path.join(CACHE_DIR, 'xena_exact_heatmap.pkl'), 'rb'))
+    return xena_exact_heatmap_data
 
 @st.cache_data()
 def load_esmfold():
@@ -99,43 +123,6 @@ def load_esmfold():
         for l in j_reader:
             esmfold[l['sequence']] = l
     return esmfold
-
-
-@st.cache_data()
-def load_xena_tcga_gtex_target(vtx_id_to_transcripts):
-    xena_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_metadata.parq'))
-    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_app.parq'))
-    xena_exact_heatmap_data = pickle.load(open(os.path.join(CACHE_DIR, 'xena_exact_heatmap.pkl'), 'rb'))
-    xena_overlapping_heatmap_data = pickle.load(open(os.path.join(CACHE_DIR, 'xena_overlapping_heatmap.pkl'), 'rb'))
-    de_tables_dict = pickle.load(open(os.path.join(CACHE_DIR, 'xena_de_tables_dict.pkl'), 'rb'))
-    de_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_de_metadata.parq'))
-    xena_metadata['dashboard_group'] = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-    return xena_metadata, xena_expression, xena_exact_heatmap_data, xena_overlapping_heatmap_data, de_tables_dict, de_metadata
-
-
-# @st.cache_data()
-# def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
-#     xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
-
-#     xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
-
-#     xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
-#     transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
-#     groups = xena_metadata_df.loc[xena_vtx_sum_df.index][['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis=1)
-#     xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(groups).aggregate(np.mean)
-
-#     threshold = .1
-#     mean_vals = xena_vtx_sum_df.max()
-#     cols_to_remove = mean_vals[mean_vals < threshold].index
-#     xena_vtx_sum_df = xena_vtx_sum_df.drop(cols_to_remove, axis=1)
-    
-#     tau_df = xena_vtx_sum_df/xena_vtx_sum_df.max()
-#     tau = ((1-tau_df).sum())/(tau_df.shape[0]-1)
-#     tau.name = 'tau'
-#     xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
-
-#     return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
-
 
 @st.cache_data()
 def load_mouse_blastp_results(CACHE_DIR = '../cache'):

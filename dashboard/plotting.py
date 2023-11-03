@@ -12,7 +12,8 @@ from plotly import graph_objects as go
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 import streamlit.components.v1 as components
-
+from dashboard.util import query_de_transcripts, query_transcript_tpms, strip_ensembl_versions
+import sqlite3
 
 def color_protein_terminal_ends(aa_seq, pdb_string):
     """
@@ -34,32 +35,6 @@ def color_protein_terminal_ends(aa_seq, pdb_string):
     return '\n'.join(parts)
 
 
-def plot_transcripts_differential_expression_barplot_tcga(transcript_ids, de_tables_dict, de_metadata, title):
-    """
-    Parameters
-    ----------
-    transcript_ids : List[string]
-        The transcript IDs to plot differential expression for. (Assumes they exist in data).
-    de_tables_dict : Dict
-        Dictionary of transcript_id keys and dataframe values. Dataframes contain tables of DE 
-          results for different cancer types.
-          
-    """
-    sum_expression_cancer = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['Cancer Average'] for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-    sum_expression_cancer['condition'] = 'Cancer'
-    sum_expression_normal = pd.DataFrame(pd.DataFrame([de_tables_dict[tid]['GTEx Average'] for tid in  transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0), columns = ['Sum'])
-    sum_expression_normal['condition'] = 'GTEx'
-    
-    de = pd.DataFrame([(de_tables_dict[tid]['padj']<0.00001) & (np.abs(de_tables_dict[tid]['log2FC'])>1) & ((de_tables_dict[tid]['Cancer Average'] > 1) | (de_tables_dict[tid]['GTEx Average'] > 1)) for tid in transcript_ids if len(de_tables_dict[tid])>0]).sum(axis=0)
-
-    result = pd.concat([sum_expression_cancer, sum_expression_normal])#, '# DE Transcripts':de})
-    result['TCGA'] = result.index
-    result['# DE Transcripts'] = [de.loc[i] for i in result.index]
-    result['GTEx Normal Tissue'] = de_metadata['GTEx Tissue Type']
-    # Define the bar plot using plotly express
-    return bar_plot_expression_groups_tcga(result, 'TCGA', ['GTEx', 'Cancer'], de_metadata, title)
-
-
 def expression_de_to_echarts_data(expression_values, de_values, color):
     """
     """
@@ -79,21 +54,17 @@ def expression_de_to_echarts_data(expression_values, de_values, color):
     return data
 
 
-def bar_plot_expression_groups_tcga(dataframe, group_name, group_members, de_metadata, title):
+def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, title):
     """
     """
-    if dataframe.shape[0]>0:
-        dataframe = dataframe.copy()
-        new_df = pd.DataFrame()
-        for g, subdf in dataframe.groupby('condition'):
-            new_df[g] = subdf['Sum']
-        new_df[group_name] = subdf[group_name]
-        new_df['DE'] = subdf['# DE Transcripts']
-        dataframe = new_df.copy()
-    else:
-        return None
+    dataframe = pd.read_sql("SELECT * FROM transcript_de WHERE transcript_de.transcript_id = '{0}'".format(transcript_id.split('.')[0]),
+                        sqlite3.connect('/home/ec2-user/repos/dashboard/cache/xena.db'))
+    dataframe.rename({'TCGA Cancer Type': 'TCGA'}, axis=1, inplace=True)
+    dataframe['DE'] = (dataframe['padj']<0.0001) & (np.abs(dataframe['log2FoldChange'])>=2) & \
+                        (dataframe['Cancer Mean'].gt(4) | dataframe['GTEx Mean'].gt(4)) 
     
-    dataframe.sort_values(by='Cancer', inplace=True)
+    dataframe.sort_values(by='Cancer Mean', inplace=True)
+    de_metadata = pd.read_sql("SELECT * from sample_metadata_de", sqlite3.connect('../cache/xena.db'))
     tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
     option = {
       'title': {'text': title},
@@ -156,19 +127,19 @@ def bar_plot_expression_groups_tcga(dataframe, group_name, group_members, de_met
 
     return option
 
-def bar_plot_expression_group_autoimmune(dataframe, group_name, group_members, de_metadata, title):
+def bar_plot_expression_group_autoimmune(transcript_id, title, db_path):
     """
     """
-
-    
-    dataframe.sort_values(by='Cancer', inplace=True)
-    tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
+    df = query_de_transcripts(transcript_id, db_path)
+    group_members = ['control_mean', 'case_mean']
+    # tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
+    metadata = {k:v for k, v in df[['velia_study', 'contrast']].values}
     option = {
       'title': {'text': title},
       'tooltip': {
           "trigger": 'axis',
           #"formatter": JsCode("function (params) {console.log(params)}").js_code,
-          "formatter": JsCode("function (params) {var cols = " + json.dumps(tcga_code_to_description) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+          "formatter": JsCode("function (params) {var cols = " + json.dumps(metadata) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
       },
       'legend': {
           'data': group_members,
@@ -187,11 +158,11 @@ def bar_plot_expression_group_autoimmune(dataframe, group_name, group_members, d
       'calculable': True,
       'yAxis': [
         {
-          'name': 'Cancer Types',
+          'name': 'Study',
           'nameLocation': 'middle',
           'nameGap': 50,
           'type': 'category',
-          'data': list(dataframe[group_name].values),
+          'data': list(df['velia_study'].values),
           'axisLabel': { 'interval': 0}#, 'rotate': 90}
         }
       ],
@@ -206,12 +177,12 @@ def bar_plot_expression_group_autoimmune(dataframe, group_name, group_members, d
         {
           'name': group_members[0],
           'type': 'bar',
-          'data': expression_de_to_echarts_data(dataframe[group_members[0]], dataframe['DE'], 'blue')
+          'data': list(df[group_members[0]].values)
         },
         {
           'name': group_members[1],
           'type': 'bar',
-          'data': expression_de_to_echarts_data(dataframe[group_members[1]], dataframe['DE'], 'red')
+          'data': list(df[group_members[1]].values)
         },
       ],
     'grid': {
@@ -224,31 +195,28 @@ def bar_plot_expression_group_autoimmune(dataframe, group_name, group_members, d
 
     return option
 
+# def transcript_db_to_heatmap(selected_transcripts, title):
+    
 
-def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, expression_df, metadata_df, title, selected_transcripts, median_groups=True):
+def expression_heatmap_plot(title, selected_expression, median_groups=False):
     """
     """
     # Plot transcript expression levels
-    selected_expression = expression_df[expression_df.columns.intersection(selected_transcripts)].copy()
-    # selected_transcripts_exact = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_exact']
-    # selected_transcripts_overlapping = vtx_id_to_transcripts.loc[vtx_id, 'transcripts_overlapping']
-    # selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-    # overlap = expression_df.columns.intersection(selected_transcripts)
     set2 = sns.color_palette('Set2', n_colors=2)
     
     col_colors = [set2[0] for i in selected_expression]
     
-    if median_groups:
-        groups = metadata_df['dashboard_group']
-        grouped_exp_df = selected_expression.groupby(groups).median()
-    else:
-        grouped_exp_df = selected_expression
-    
+    # if median_groups:
+        # groups = metadata_df['dashboard_group']
+        # grouped_exp_df = selected_expression.groupby(groups).median()
+    # else:
+        # grouped_exp_df = selected_expression
+    grouped_exp_df = selected_expression
     if grouped_exp_df.shape[1] == 0:
         return None, None
     elif grouped_exp_df.shape[1] == 1:
         plot_df = grouped_exp_df
-        plot_df.sort_values(by=selected_transcripts[0], inplace=True)
+        plot_df.sort_values(by=selected_expression.columns[0], inplace=True)
         plot_df = plot_df.T
     else:
         row_clusters = linkage(grouped_exp_df.T.values, method='complete', metric='euclidean')
@@ -267,15 +235,7 @@ def expression_heatmap_plot(vtx_id, vtx_id_to_transcripts, expression_df, metada
     
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
-    
-    
-    
-    # updated_row_names = []
-    # for r in row_names:
-    #     if r in selected_transcripts_exact:
-    #         updated_row_names.append(f'**{r}')
-    #     else:
-    #         updated_row_names.append(r)
+
     max_contrast = grouped_exp_df.max().max()
     if max_contrast < 5:
         max_contrast = 5
@@ -388,8 +348,6 @@ def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df):
 def expression_vtx_boxplot(transcript_id, expression_df):
     """
     """
-    if '**' in transcript_id:
-        transcript_id = transcript_id[2:]
     groups = expression_df[['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis = 1)
     df = expression_df[[transcript_id]].copy()
     df['Sample'] = groups

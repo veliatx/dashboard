@@ -23,7 +23,9 @@ from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string, convert_df
 from dashboard.data_load import *
 
-def sorf_details(sorf_df, tcga_data, autoimmune_data):
+import sqlite3
+
+def sorf_details(sorf_df):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
     
@@ -58,6 +60,7 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
             st.session_state['curr_vtx_id'] = str(df.loc[row_idx_name]['vtx_id'])
 
     st.write(f'{df.shape[0]} sORF entries')
+    # df['transcripts_exact'] = df['transcripts_exact'].astype('str')
     update_df = st.data_editor(
         df,
         column_config={
@@ -69,6 +72,7 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
         key='data_editor',
         hide_index=True
     )
+    # df['transcripts_exact'] = df['transcripts_exact'].apply(eval)
 
     st.download_button(
         label="Download as CSV",
@@ -80,8 +84,9 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
     # Load data
-    xena_metadata, xena_expression, _, _, de_tables_dict, de_metadata = tcga_data
-    autoimmune_expression, autoimmune_metadata = autoimmune_data
+    
+    xena_metadata, xena_transcript_ids = load_xena_metadata()
+    autoimmune_metadata = load_autoimmune_atlas()
     esmfold = load_esmfold()
     blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
     kibby = load_kibby_results(sorf_df)
@@ -98,18 +103,21 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
 
-        selected_transcripts_exact = sorf_df.loc[vtx_id, 'transcripts_exact']
-        selected_transcripts_overlapping = []#sorf_df.loc[vtx_id, 'transcripts_overlapping']
-        selected_transcripts = np.concatenate([selected_transcripts_exact, selected_transcripts_overlapping])        
-        xena_overlap = xena_expression.columns.intersection(selected_transcripts)
+        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']
+        
+        xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
+        # autoimmune_overlap = selected_transcripts
         value = None
-
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
 
             with col1:
                 title = f'TCGA/GTEx Transcript Specific Expression - {vtx_id}'
-                echart_option_tcga, events_tcga = plotting.expression_heatmap_plot(vtx_id, sorf_df, xena_expression, xena_metadata, title, selected_transcripts)
+                selected_expression_tcga = pd.read_parquet('../cache/xena_app.parq', columns=xena_overlap)
+                selected_expression_tcga_ave = selected_expression_tcga.groupby(xena_metadata['dashboard_group']).mean()
+                echart_option_tcga, events_tcga = plotting.expression_heatmap_plot(title, 
+                                                                                   selected_expression_tcga_ave,
+                                                                                   list(xena_overlap))
                 
                 if echart_option_tcga:
                     value = st_echarts(echart_option_tcga,
@@ -123,14 +131,22 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
                     
                 st.title('Autoimmune Expression Atlas')
                 title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
-                echart_option_ai, events_ai = plotting.expression_heatmap_plot(vtx_id, sorf_df, autoimmune_expression, autoimmune_metadata, title, selected_transcripts, median_groups=False)
+                
+                formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
+                sql_query = f"SELECT * FROM transcript_tpm WHERE transcript_tpm.transcript_id IN ({formatted_ids});"
+                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect('../data/autoimmune_expression_atlas_v1.db'))
+                selected_expression_ai_ave = selected_expression_ai.pivot_table(index='group',
+                                                                        columns='transcript_id',
+                                                                        values='tpm', 
+                                                                        aggfunc=np.mean).fillna(0.01)
+                echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
+                                                                               selected_expression_ai_ave,
+                                                                               median_groups=False)
                 if echart_option_ai:
                     value = st_echarts(echart_option_ai, 
                                        height="900px", 
-                                    #    width="600px",
                                        events=events_ai, 
                                        renderer='svg',
-                                    #    key = 'autoimmune_echart_heatmap_explorer'
                                        )
                 else:
                     st.write('No transcripts in Velia AI found containing this sORF')
@@ -145,22 +161,34 @@ def sorf_details(sorf_df, tcga_data, autoimmune_data):
                             selected_transcript = [value]
 
                     elif selected_transcripts.shape[0]:
-                        selected_transcript = [xena_overlap[0]]
+                        selected_transcript = [selected_transcripts[0]]
 
                     chart_title = f'Differential Expression - {selected_transcript[0]}'
-
-                    de_exact_echarts_options_b = plotting.plot_transcripts_differential_expression_barplot_tcga(selected_transcript, 
-                                                                                                           de_tables_dict, de_metadata,
-                                                                                                           chart_title)
-                                                                                                    
+                    de_exact_echarts_options_b = plotting.bar_plot_expression_groups_tcga(selected_transcript[0].split('.')[0], 
+                                                                                            'TCGA', ['GTEx Mean', 'Cancer Mean'],
+                                                                                            chart_title)                                     
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
-                
-            if (len(xena_overlap)>0) and value:
+                    
+                    db_address = '/home/ec2-user/repos/dashboard/data/autoimmune_expression_atlas_v1.db'
+                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(selected_transcript[0], 'DE', db_address)
+                    st_echarts(options=option_ai_de, key='c', height='900px', width = '650px', renderer='svg')
+                    
+            if (len(selected_transcripts)>0) and value:
                 st.write(value)
 
-                xena_vtx_exp_df = xena_metadata.merge(xena_expression, left_index=True, right_index=True)
-                fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
-                st.plotly_chart(fig, use_container_width=True)
+                xena_vtx_exp_df = xena_metadata.merge(selected_expression_tcga, left_index=True, right_index=True)
+                fig_tcga = plotting.expression_vtx_boxplot(value.split('.')[0], xena_vtx_exp_df)
+                st.plotly_chart(fig_tcga, use_container_width=True)
+                
+                import plotly.express as px
+                fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==value].sort_values('group'),
+                    x='group', points = 'all',
+                    y='tpm', height=500,
+                    width=1000
+                )
+                st.plotly_chart(fig_ai, use_container_width=True)
+                
+                
                 
         with st.expander("Protein Structure and Function", expanded=True):
             col3, col4 = st.columns(2)
