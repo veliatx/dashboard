@@ -1,10 +1,5 @@
-import json
-import jsonlines
-import os
-import pickle
 import py3Dmol
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -12,15 +7,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 import streamlit_scrollable_textbox as stx
 
-from collections import defaultdict
+
 from streamlit_plotly_events import plotly_events
-from tqdm import tqdm
 
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
 from dashboard import plotting, description
-from dashboard.util import filter_dataframe, convert_list_string, convert_df
+from dashboard.util import filter_dataframe, convert_list_string, convert_df, query_de_transcripts
 from dashboard.data_load import *
 
 import sqlite3
@@ -34,13 +28,21 @@ def sorf_details(sorf_df):
     df = sorf_df.copy()
     df.drop('phylocsf_vals', axis=1, inplace=True)
     
-    filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs', 'Secreted sORFs', 
-                                                                      'Translated sORFs'), index = 1)
-    if filter_option == 'Secreted sORFs':
-        df = df[df['secreted']]
+    filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs',
+                                                                      'Secreted and on Transcript(s)', 
+                                                                      'All Secreted sORFs',
+                                                                      'Translated and on Transcript(s)', 
+                                                                      'All Translated sORFs'), index = 0)
+    exist_on_transcript = df['transcripts_exact'].apply(len)
+    if filter_option == 'Translated and on Transcript(s)':
+        df = df[df['translated'] & exist_on_transcript]
     elif filter_option == 'All sORFs':
         pass
-    elif filter_option == 'Translated sORFs':
+    elif filter_option == 'Secreted and on Transcript(s)':
+        df = df[df['secreted'] & exist_on_transcript]
+    elif filter_option == 'All Secreted sORFs':
+        df = df[df['secreted']]
+    elif filter_option ==  'All Translated sORFs':
         df = df[df['translated']]
 
     df = filter_dataframe(df, 'explorer_filter')
@@ -134,11 +136,11 @@ def sorf_details(sorf_df):
                 
                 formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
                 sql_query = f"SELECT * FROM transcript_tpm WHERE transcript_tpm.transcript_id IN ({formatted_ids});"
-                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect('../data/autoimmune_expression_atlas_v1.db'))
+                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect('../data/autoimmune_expression_atlas_v1.db')).fillna(0.01)
                 selected_expression_ai_ave = selected_expression_ai.pivot_table(index='group',
                                                                         columns='transcript_id',
                                                                         values='tpm', 
-                                                                        aggfunc=np.mean).fillna(0.01)
+                                                                        aggfunc=np.nanmean).fillna(0.01).apply(lambda x: np.log2(x+1))
                 echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
@@ -155,11 +157,7 @@ def sorf_details(sorf_df):
 
                 if len(xena_overlap) > 0:
                     if value:
-                        if value.startswith('**'):
-                            selected_transcript = [value[2:]]
-                        else:
-                            selected_transcript = [value]
-
+                        selected_transcript = [value]
                     elif selected_transcripts.shape[0]:
                         selected_transcript = [selected_transcripts[0]]
 
@@ -170,7 +168,10 @@ def sorf_details(sorf_df):
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
                     
                     db_address = '/home/ec2-user/repos/dashboard/data/autoimmune_expression_atlas_v1.db'
-                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(selected_transcript[0], 'DE', db_address)
+                    
+                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(query_de_transcripts(selected_transcript[0], db_address).fillna(0.01),
+                                                                                 'DE',
+                                                                                 db_address)
                     st_echarts(options=option_ai_de, key='c', height='900px', width = '650px', renderer='svg')
                     
             if (len(selected_transcripts)>0) and value:
@@ -184,7 +185,7 @@ def sorf_details(sorf_df):
                 fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==value].sort_values('group'),
                     x='group', points = 'all',
                     y='tpm', height=500,
-                    width=1000
+                    width=800
                 )
                 st.plotly_chart(fig_ai, use_container_width=True)
                 
@@ -213,9 +214,6 @@ def sorf_details(sorf_df):
                 view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
                 view.zoomTo()
                 st.header('sORF ESMfold', help="Red - Low Confidence  \nBlue - High Confidence  \nConfidence is based on plDDT score from ESMFold  \nN-term is blue and C-term is red")
-                # st.text('Red - Low confidence')
-                # st.text('Blue - High confidence')
-                # st.text('N-term is blue and C-term is red')
                 components.html(view._make_html(), height=500, width=600)
                 
             f = protein_features_df[vtx_id]
@@ -227,10 +225,9 @@ def sorf_details(sorf_df):
         
         with st.expander("BLASTp results", expanded=True):
             # Blastp Mouse
-            # primary_id = sorf_df[sorf_df['vtx_id'] == vtx_id].iloc[0]['screening_phase_id']
             blastp_results_selected_sorf = blastp_mouse_hits[vtx_id]
             if len(blastp_results_selected_sorf) == 0:
-                long_text = "No alignments with mouse found." #st.write('No alignments with mouse found.')
+                long_text = "No alignments with mouse found."
             else:
                 long_text = ""
                 for h in blastp_results_selected_sorf:

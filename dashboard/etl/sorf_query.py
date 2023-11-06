@@ -1,16 +1,8 @@
-import ast
-import hashlib
-import logging
-import pandas as pd
-import boto3
-import smart_open
 
-import pyfaidx
-import fsspec
+import pandas as pd
+import smart_open
 from tqdm import tqdm
 import os
-
-from pathlib import Path
 from Bio.Seq import Seq
 from types import SimpleNamespace
 import re
@@ -21,20 +13,11 @@ current_folder = pathlib.Path(__file__).parents[0]
 transcripts = SeqIO.parse(os.path.join(current_folder, './gencode.v42.transcripts.fa'), 'fasta')
 transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
-# GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
-# reference = SeqIO.parse(os.path.join(current_folder, 'reference.fa'))
-# reference = {r.id: str(r.seq) for r in reference}
-
-
-# from conservation import phylocsf
-# from seqmap import genomic, utils
-
 from sqlalchemy import and_, or_
 
-from veliadb import base, settings, annotation_loading
+from veliadb import base
 from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
                           TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref)
-import veliadb.util as vdb_util
 
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
@@ -63,11 +46,11 @@ def parallel_sorf_query(vtx_id):
     aa = current_orf.aa_seq
     r_internal = find_seq_substring(nt, transcripts)
     transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
-    overlapping_tids = query_overlapping_transcripts(current_orf, session)
-    overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
+    # overlapping_tids = query_overlapping_transcripts(current_orf, session)
+    # overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
     attributes = parse_orf(current_orf, session)
     attributes['transcripts_exact'] = transcripts_exact
-    attributes['transcripts_overlapping'] = overlapping_tids
+    # attributes['transcripts_overlapping'] = overlapping_tids
     # if attributes['aa'] == '':
     attributes['aa'] = aa
     # if attributes['nucl'] == '':
@@ -219,9 +202,6 @@ import fsspec
 from tqdm import tqdm
 import os
 
-# deduped_conservation = pd.read_parquet('deduped_phylocsf_length_filtered.parq')
-# transcripts = pyfaidx.Fasta(os.path.join(current_folder, './gencode.v42.transcripts.fa'))
-
 def find_seq_substring(query, target_dict):
     if query == '':
         return []
@@ -233,12 +213,12 @@ if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
         with os.path.join(current_folder, 'reference.fa') as f:
             for line in tqdm(fhandle.readlines()):
                 f.write(line)
-def query_overlapping_transcripts(o, session):
-    results = session.query(Transcript).filter(and_(o.start >= Transcript.start, 
-                                      o.end <= Transcript.end, 
-                                      o.strand == Transcript.strand,
-                                      o.assembly_id == Transcript.assembly_id)).all()
-    return results
+# def query_overlapping_transcripts(o, session):
+#     results = session.query(Transcript).filter(and_(o.start >= Transcript.start, 
+#                                       o.end <= Transcript.end, 
+#                                       o.strand == Transcript.strand,
+#                                       o.assembly_id == Transcript.assembly_id)).all()
+#     return results
 
 def compute_exact_transcript_matches(o):
     nt, aa = extract_nucleotide_sequence_veliadb(o, reference)
@@ -298,23 +278,3 @@ def parse_sorf_phase(sorf_df, session):
             else:
                 phase_entries.append('-1')
     return phase_ids, phase_entries
-                
-
-
-# with jsonlines.open('sorf_table.jsonlines', mode = 'w') as fh:
-#     for current_orf in tqdm(orfs):
-#         nt, aa = extract_nucleotide_sequence_broken_psl_starts(current_orf, reference)
-#         tids = find_seq_substring(nt, transcripts)
-#         # if len(tids)>0:
-#         tids = [i.split('|')[0].split('.')[0] for i in tids]
-#         attributes = {
-#             'chr': current_orf.assembly.ucsc_style_name,
-#             'vtx': f"VTX-{str(current_orf.id).zfill(7)}",
-#             'strand': current_orf.strand,
-#             'start': current_orf.start,
-#             'end': current_orf.end,
-#             'nucl': nt,
-#             'aa': aa,
-#             'transcripts': tids
-#         }
-#         fh.write(attributes)

@@ -1,17 +1,13 @@
 import altair as alt
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import seaborn as sns
 import simplejson as json
 import streamlit as st
-import streamlit.components.v1 as components
 
-from plotly import graph_objects as go
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
-import streamlit.components.v1 as components
 from dashboard.util import query_de_transcripts, query_transcript_tpms, strip_ensembl_versions
 import sqlite3
 
@@ -127,10 +123,9 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
 
     return option
 
-def bar_plot_expression_group_autoimmune(transcript_id, title, db_path):
+def bar_plot_expression_group_autoimmune(df, title, db_path):
     """
     """
-    df = query_de_transcripts(transcript_id, db_path)
     group_members = ['control_mean', 'case_mean']
     # tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
     metadata = {k:v for k, v in df[['velia_study', 'contrast']].values}
@@ -138,7 +133,6 @@ def bar_plot_expression_group_autoimmune(transcript_id, title, db_path):
       'title': {'text': title},
       'tooltip': {
           "trigger": 'axis',
-          #"formatter": JsCode("function (params) {console.log(params)}").js_code,
           "formatter": JsCode("function (params) {var cols = " + json.dumps(metadata) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
       },
       'legend': {
@@ -195,7 +189,6 @@ def bar_plot_expression_group_autoimmune(transcript_id, title, db_path):
 
     return option
 
-# def transcript_db_to_heatmap(selected_transcripts, title):
     
 
 def expression_heatmap_plot(title, selected_expression, median_groups=False):
@@ -205,12 +198,7 @@ def expression_heatmap_plot(title, selected_expression, median_groups=False):
     set2 = sns.color_palette('Set2', n_colors=2)
     
     col_colors = [set2[0] for i in selected_expression]
-    
-    # if median_groups:
-        # groups = metadata_df['dashboard_group']
-        # grouped_exp_df = selected_expression.groupby(groups).median()
-    # else:
-        # grouped_exp_df = selected_expression
+
     grouped_exp_df = selected_expression
     if grouped_exp_df.shape[1] == 0:
         return None, None

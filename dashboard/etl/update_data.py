@@ -12,11 +12,7 @@ Dashboard has two components of input information.
         new VTX generation. (e.g. everytime we screen a new collection)
     
 """
-from dashboard.etl import transcript_features
-import pandas as pd
 import boto3
-import os
-import shutil
 
 
 def download_file_from_s3(bucket_name, s3_object_key, local_file_path):

@@ -1,25 +1,12 @@
-import json
-import jsonlines
-import os
-import pickle
-import py3Dmol
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
-import streamlit_scrollable_textbox as stx
 
-from collections import defaultdict
 from streamlit_plotly_events import plotly_events
-from tqdm import tqdm
 
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
-from dashboard import plotting, description
 from dashboard.util import filter_dataframe, convert_list_string, convert_df
 from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard.data_load import *
@@ -46,13 +33,10 @@ def main():
     pages = {
         "sORF Details": dashboard.tabs.sorf_explorer_table.sorf_details,
         "sORF Transcriptome Atla (TCGA)": dashboard.tabs.expression_heatmap.tcga_page,
-        # "sORF Transcriptome Atlas (Autoimmune)": dashboard.tabs.expression_heatmap.autoimmune_page,
         "sORF Genome Browser": genome_browser,
         "sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page
     }
     sorf_df = load_sorf_df_conformed()
-    # tcga_data = load_xena_tcga_gtex_target(sorf_df)
-    # autoimmune_data = load_autoimmune_atlas(sorf_df)
     tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
 
     with tab1:
@@ -60,8 +44,7 @@ def main():
 
     with tab2:
         dashboard.tabs.expression_heatmap.tcga_page(sorf_df)
-    # with tab3:
-        # dashboard.tabs.expression_heatmap.autoimmune_page(sorf_df, autoimmune_data)
+
     with tab3:
         genome_browser()
         
