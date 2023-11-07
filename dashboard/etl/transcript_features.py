@@ -3,6 +3,9 @@ import smart_open
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+import os
+from dashboard.etl import CACHE_DIR, TPM_DESEQ2_FACTOR
+from collections import defaultdict
 
 # def load_s3_transcript_DE_stats
 
@@ -90,3 +93,46 @@ def create_comparison_groups_xena_tcga_vs_normal(xena, tissue_pairs):
 def load_ccle_from_s3(path_to_ccle):
     pass
 
+def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
+    xena_vtx_sum_df = np.log2(xena_vtx_sum_df + 1)
+
+    xena_vtx_exp_df = xena_metadata_df.merge(xena_vtx_sum_df, left_index=True, right_index=True)
+
+    xena_vtx_sum_df = xena_vtx_sum_df.merge(xena_metadata_df, left_index=True, right_index=True)
+    transcript_col_names = [i for i in xena_vtx_sum_df.columns if i not in xena_metadata_df.columns]
+    groups = xena_metadata_df.loc[xena_vtx_sum_df.index][['_primary_site', '_study']].apply(lambda x: '-'.join(x), axis=1)
+    xena_vtx_sum_df = xena_vtx_sum_df[transcript_col_names].groupby(groups).aggregate(np.mean)
+
+    threshold = .1
+    mean_vals = xena_vtx_sum_df.max()
+    cols_to_remove = mean_vals[mean_vals < threshold].index
+    xena_vtx_sum_df = xena_vtx_sum_df.drop(cols_to_remove, axis=1)
+    
+    tau_df = xena_vtx_sum_df/xena_vtx_sum_df.max()
+    tau = ((1-tau_df).sum())/(tau_df.shape[0]-1)
+    tau.name = 'tau'
+    xena_tau_df = xena_vtx_sum_df.T.merge(tau, left_index=True, right_index=True)
+
+    return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
+
+def load_de_results(transcripts):
+    cache_filez = os.listdir(CACHE_DIR)
+    temp_dict = {}
+    for f in cache_filez:
+        if f.endswith('_de.parq') and not (f=='expression_de.parq'):
+            df = pd.read_parquet(os.path.join(CACHE_DIR, f))
+            df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
+            df = df[df['transcript'].isin(transcripts)].copy()
+            temp_dict[f.split('_')[0]] = df
+            
+    de_tables_dict = defaultdict(dict)
+    for c, df in tqdm(temp_dict.items()):
+        for row in df.itertuples():
+            de_tables_dict[row[0]][c] = {'Cancer Average': row._7/TPM_DESEQ2_FACTOR, 'GTEx Average': row._8/TPM_DESEQ2_FACTOR, 
+                                         'log2FC': row.log2FoldChange, 'padj': row.padj}
+    for t, d in de_tables_dict.items():
+        de_tables_dict[t] = pd.DataFrame(d).T
+    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
+    tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
+    tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
+    return de_tables_dict, tcga_gtex_tissue_metadata

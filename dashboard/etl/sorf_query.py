@@ -4,28 +4,39 @@ import smart_open
 from tqdm import tqdm
 import os
 from Bio.Seq import Seq
+from Bio import SeqIO
+
 from types import SimpleNamespace
 import re
-from Bio import SeqIO
 import pathlib
-current_folder = pathlib.Path(__file__).parents[0]
 
-transcripts = SeqIO.parse(os.path.join(current_folder, './gencode.v42.transcripts.fa'), 'fasta')
-transcripts = {r.id: str(r.seq).lower() for r in transcripts}
-
+from io import StringIO
+from copy import deepcopy
 from sqlalchemy import and_, or_
 
 from veliadb import base
 from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
                           TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref)
 
+
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
+GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
 
+current_folder = pathlib.Path(__file__).parents[0]
+# Function to parse the FASTA content
+def parse_fasta(fasta_content):
+    fasta_io = StringIO(fasta_content)
+    records = list(SeqIO.parse(fasta_io, "fasta"))
+    return records
 
-from copy import deepcopy
+with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcripts.fa.gz') as f:
+    transcripts = f.read()
+    transcripts = parse_fasta(transcripts)
+    transcripts = {r.id: str(r.seq).lower() for r in transcripts}
+
 def parallel_sorf_query(vtx_id):
 # Query DB
     session = base.Session() # connect to db
@@ -210,7 +221,7 @@ def find_seq_substring(query, target_dict):
 
 if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
     with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
-        with os.path.join(current_folder, 'reference.fa') as f:
+        with open(os.path.join(current_folder, 'reference.fa'), 'w') as f:
             for line in tqdm(fhandle.readlines()):
                 f.write(line)
 # def query_overlapping_transcripts(o, session):
