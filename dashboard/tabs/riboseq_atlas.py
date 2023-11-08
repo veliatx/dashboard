@@ -13,16 +13,9 @@ def get_job_names_on_s3():
     """Retrieves top-level folder names from the velia-piperuns-dev bucket starting with VPR_orfcalling."""
 
     folder_names = []
-    client = boto3.client('s3')
-    paginator = client.get_paginator('list_objects')
-    result = paginator.paginate(Bucket='velia-piperuns-dev', Delimiter='/')
-    for prefix in result.search('CommonPrefixes'):
-        folder_name = prefix.get('Prefix')
-        if folder_name.endswith("/"):
-            folder_name = folder_name[:-1]
-
-        if folder_name.startswith("VPR_orfcalling"):
-            folder_names.append(folder_name)
+    with open("s3://velia-piperuns-dev/summary/experiments_with_orfrater_results.csv") as experiments_csv:
+        for index, row in pd.read_csv(experiments_csv, index_col=0).iterrows():
+            folder_names.append(row.iloc[0])
     return folder_names
 
 
@@ -56,36 +49,51 @@ def select_experiments(state):
 def get_coverge(experiment_name):
     """Returns coverage data for the given pipeline run."""
 
-    bed_filename = os.path.join("./data", "%s_extended.final.coverage.bed" %experiment_name)
+    # load n_reads, n_covered_bases, sorf_length, coverage, and orfrater score
     riboseq_data = {}
-    for line in open(f"s3://velia-piperuns-dev/{experiment_name}"
-                     f"/output/orfrater_results/{experiment_name}_extended.final.coverage.bed"):
-        elements = line.strip().split()
-        candidate_id = elements[3]
-        n_reads = int(elements[12])
-        n_covered_bases = int(elements[13])
-        sorf_length = int(elements[14])
-        coverage = float(elements[15])
-        orfrater = int(elements[16]) if elements[16] != "False" else -1
-        
-        if candidate_id in riboseq_data:
-            print(line)
-            print(riboseq_data[candidate_id][0])
-        else:
-            riboseq_data[candidate_id] = [
-                line.strip(), n_reads, orfrater, n_covered_bases, sorf_length, coverage]
+    try:
+        for line in open(f"s3://velia-piperuns-dev/{experiment_name}"
+                         f"/output/orfrater_results/{experiment_name}_extended.final.coverage.bed"):
+            elements = line.strip().split()
+            candidate_id = elements[3]
+            n_reads = int(elements[12])
+            n_covered_bases = int(elements[13])
+            sorf_length = int(elements[14])
+            coverage = float(elements[15])
+            orfrater = int(elements[16]) if elements[16] != "False" else -1
 
-    # fix the inaccurate n_reads
+            if candidate_id in riboseq_data:
+                print(line)
+                print(riboseq_data[candidate_id][0])
+            else:
+                riboseq_data[candidate_id] = [
+                    line.strip(), n_reads, orfrater, n_covered_bases, sorf_length, coverage]
+    except:
+        return riboseq_data
+            
+
+    # read total
+    total_reads = int(open(f"s3://velia-piperuns-dev/{experiment_name}/output/aligned/{experiment_name}_count.txt").readline())
+
+    # update and normalize(RPKM) n_reads
     for line in open(f"s3://velia-piperuns-dev/{experiment_name}"
                      f"/output/orfrater_results/{experiment_name}_all.final.coverage.bed"):
         elements = line.strip().split()
         candidate_id = elements[3]
         n_reads = int(elements[12])
-        orfrater = int(elements[16]) if elements[16] != "False" else -1
-        riboseq_data[candidate_id][1] = n_reads
-        if orfrater != riboseq_data[candidate_id][2]:
-            exit("incorrect")
+        sorf_length = int(elements[14])
+        rpkm = n_reads*(10**9)/(float(sorf_length*total_reads))
+        riboseq_data[candidate_id][1] = rpkm
+
     return riboseq_data
+
+
+def get_average_coverage():
+    """Returns a dataframe table containing ribo-seq coverage avergaed across each cell-type."""
+
+    with open("s3://velia-piperuns-dev/summary/avg_rpkm_all_experiments.csv") as experiments_csv:
+        coverage_df = pd.read_csv(experiments_csv, index_col=0)
+    return coverage_df.round(0)
 
 
 def get_all_coverage(experiment_names):
@@ -107,7 +115,7 @@ def get_all_coverage(experiment_names):
 
     # list df columns
     column_list = []
-    column_names = ["#mapped reads", "orfrater score", "#covered bases", "sorf length", "%coverage",]
+    column_names = ["RPKM", "orfrater score", "#covered bases", "sorf length", "%coverage",]
     for experiment_idx, experiment in enumerate(experiment_names):
         for column_name in column_names:
             column_list.append(column_name+"-"+str(experiment_idx))
@@ -130,13 +138,16 @@ def get_all_coverage(experiment_names):
         coverage_df = coverage_df.background_gradient(
             axis=0, subset=[f"%coverage-{experiment_idx}"], vmin=0, vmax=1, cmap='YlOrRd')
         coverage_df = coverage_df.background_gradient(
-            axis=0, subset=[f"#mapped reads-{experiment_idx}"], vmin=0, vmax=1000, cmap='Blues')
+            axis=0, subset=[f"RPKM-{experiment_idx}"], vmin=0, vmax=500, cmap='Blues')
 
     return coverage_df
 
 def page():
     st.title("sORF Ribo-seq Atlas")
+    st.title("Average RPKM")
+    st.dataframe(get_average_coverage())
 
+    st.title("ORF-Rater scores")
     select_experiments(st.session_state)
     if st.session_state["experiments"]:
         for experiment_idx, experiment in enumerate(st.session_state["experiments"]):
