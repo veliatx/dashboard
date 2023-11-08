@@ -32,7 +32,7 @@ def sorf_details(sorf_df):
                                                                       'Secreted and on Transcript(s)', 
                                                                       'All Secreted sORFs',
                                                                       'Translated and on Transcript(s)', 
-                                                                      'All Translated sORFs'), index = 0)
+                                                                      'All Translated sORFs'), index = 2)
     exist_on_transcript = df['transcripts_exact'].apply(len)
     if filter_option == 'Translated and on Transcript(s)':
         df = df[df['translated'] & exist_on_transcript]
@@ -122,7 +122,7 @@ def sorf_details(sorf_df):
                                                                                    list(xena_overlap))
                 
                 if echart_option_tcga:
-                    value = st_echarts(echart_option_tcga,
+                    value_tcga = st_echarts(echart_option_tcga,
                                        height="900px", 
                                        events=events_tcga, 
                                        renderer='svg',
@@ -145,7 +145,7 @@ def sorf_details(sorf_df):
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
                 if echart_option_ai:
-                    value = st_echarts(echart_option_ai, 
+                    value_ai = st_echarts(echart_option_ai, 
                                        height="900px", 
                                        events=events_ai, 
                                        renderer='svg',
@@ -156,35 +156,38 @@ def sorf_details(sorf_df):
             with col2:
 
                 if len(xena_overlap) > 0:
-                    if value:
-                        selected_transcript = [value]
-                    elif selected_transcripts.shape[0]:
-                        selected_transcript = [selected_transcripts[0]]
-
-                    chart_title = f'Differential Expression - {selected_transcript[0]}'
-                    de_exact_echarts_options_b = plotting.bar_plot_expression_groups_tcga(selected_transcript[0].split('.')[0], 
+                    if value_tcga:
+                        selected_transcript_tcga = value_tcga
+                    else:
+                        selected_transcript_tcga = list(xena_overlap)[0]
+                    # print(value, selected_transcript, selected_transcripts)
+                    chart_title = f'Differential Expression - {selected_transcript_tcga}'
+                    de_exact_echarts_options_b = plotting.bar_plot_expression_groups_tcga(selected_transcript_tcga.split('.')[0], 
                                                                                             'TCGA', ['GTEx Mean', 'Cancer Mean'],
                                                                                             chart_title)                                     
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
-                    
+                st.title('')
+                if len(selected_transcripts) > 0:
+                    if value_ai:
+                        selected_transcript_ai = value_ai
+                    else:
+                        selected_transcript_ai = selected_transcripts[0]
                     db_address = '/home/ec2-user/repos/dashboard/data/autoimmune_expression_atlas_v1.db'
-                    
-                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(query_de_transcripts(selected_transcript[0], db_address).fillna(0.01),
-                                                                                 'DE',
+                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(query_de_transcripts(selected_transcript_ai, db_address).fillna(0.01),
+                                                                                 f'Autoimmune DE - {selected_transcript_ai}',
                                                                                  db_address)
                     st_echarts(options=option_ai_de, key='c', height='900px', width = '650px', renderer='svg')
                     
-            if (len(selected_transcripts)>0) and value:
-                st.write(value)
-
+            if (len(xena_overlap)>0) and value_tcga:
+                st.write(value_tcga)
                 xena_vtx_exp_df = xena_metadata.merge(selected_expression_tcga, left_index=True, right_index=True)
-                fig_tcga = plotting.expression_vtx_boxplot(value.split('.')[0], xena_vtx_exp_df)
+                fig_tcga = plotting.expression_vtx_boxplot(selected_transcript_tcga.split('.')[0], xena_vtx_exp_df)
                 st.plotly_chart(fig_tcga, use_container_width=True)
                 
-                import plotly.express as px
-                fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==value].sort_values('group'),
+            if (len(selected_transcripts)>0) and value_ai:    
+                fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
                     x='group', points = 'all',
-                    y='tpm', height=500,
+                    y=selected_transcript_ai, height=500,
                     width=800
                 )
                 st.plotly_chart(fig_ai, use_container_width=True)

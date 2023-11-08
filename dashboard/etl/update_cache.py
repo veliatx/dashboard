@@ -84,20 +84,20 @@ if __name__ == '__main__':
     sorf_df = sorf_df[cols]
     session.close()
     
-        # Finish massaging expression data
+    # Munge sorf_df into format consistent with historical app.
     with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_df.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
     python_executable = '/home/ec2-user/anaconda/envs/protein_tools/bin/python'
     subprocess.run(shlex.split(f"{python_executable} /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
     # Massage table to standard format
-    _, blastp_table = load_mouse_blastp_results(CACHE_DIR = CACHE_DIR)
+    _, blastp_table = load_mouse_blastp_results(CACHE_DIR = OUTPUT_DIR)
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    protein_scores = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_scores.csv'), index_col=0)
+    protein_scores = pd.read_csv(os.path.join(OUTPUT_DIR, 'protein_data', 'sequence_features_scores.csv'), index_col=0)
 
     sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
                     left_index=True, right_index=True, how='left')
-    protein_strings = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
+    protein_strings = pd.read_csv(os.path.join(OUTPUT_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
     protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
     sorf_df = sorf_df.merge(protein_cutsite,
                     left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
@@ -116,7 +116,7 @@ if __name__ == '__main__':
 
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
     sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
-    sorf_df.to_parquet(os.path.join(CACHE_DIR, 'sorf_df.parq'))
+    sorf_df.to_parquet(os.path.join(OUTPUT_DIR, 'sorf_df.parq'))
     # Done formatting
     
     # Start ETL expression data
@@ -131,23 +131,19 @@ if __name__ == '__main__':
         for t in n.index:
             rows.append([t, cancer, g['GTEx Tissue'], g['TCGA Cancer'], n.loc[t], c.loc[t]])
     
-    # normal_vs_gtex_expression = pd.DataFrame(rows, columns = ['Transcript', 'TCGA', 'GTEx', 'Description', 'Normal', 'Cancer'])
-    # normal_vs_gtex_expression.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
     tissue_pairs.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
     xena.to_parquet(os.path.join(OUTPUT_DIR, 'xena.parq'))
     de_genes = read_tcga_de_from_s3('velia-analyses-dev',
                      'VAP_20230329_tcga_differential_expression', output_dir = OUTPUT_DIR)
     
-    xena_expression = xena[xena.columns[6:]]#pd.read_parquet(os.path.join('../cache', 'xena.parq'))
-    xena_metadata = metadata#xena_expression[xena_expression.columns[:6]].copy()
-    # xena_expression = xena_expression[xena_expression.columns[6:]].copy()
-
+    xena_expression = xena[xena.columns[6:]]
+    xena_metadata = metadata
+    
     all_transcripts = [i for i in transcripts_to_map if i.startswith('ENST')]
     # Sum expression over each VTX            
     xena_vtx_sums = xena_expression.T.copy()
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
     xena_exact_vtx_sums = {}
-    # xena_overlapping_vtx_sums = {}
     transcripts_in_xena = xena_expression.columns
     for vtx_id, row in tqdm(sorf_df.iterrows()):
         transcripts_parsed = [i.split('.')[0] if i.startswith('ENST') else i for i in row['transcripts_exact']]
@@ -155,17 +151,14 @@ if __name__ == '__main__':
         if len(intersection_transcripts) > 0:
             xena_exact_vtx_sums[vtx_id] = xena_expression[intersection_transcripts].sum(axis=1)
     xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
-    # xena_overlapping_vtx_sums = pd.DataFrame(xena_overlapping_vtx_sums)
     xena_exact_heatmap_data = process_sums_dataframe_to_heatmap(xena_exact_vtx_sums, xena_metadata)
-    # xena_overlapping_heatmap_data = process_sums_dataframe_to_heatmap(xena_overlapping_vtx_sums, xena_metadata)
-    xena_metadata.to_parquet(os.path.join(CACHE_DIR, 'xena_metadata.parq'))
-    xena_expression.to_parquet(os.path.join(CACHE_DIR, 'xena_app.parq'))
-    pickle.dump(xena_exact_heatmap_data, open(os.path.join(CACHE_DIR, 'xena_exact_heatmap.pkl'), 'wb'))
-    # pickle.dump(xena_overlapping_heatmap_data, open(os.path.join(CACHE_DIR, 'xena_overlapping_heatmap.pkl'), 'wb'))
+    xena_metadata.to_parquet(os.path.join(OUTPUT_DIR, 'xena_metadata.parq'))
+    xena_expression.to_parquet(os.path.join(OUTPUT_DIR, 'xena_app.parq'))
+    pickle.dump(xena_exact_heatmap_data, open(os.path.join(OUTPUT_DIR, 'xena_exact_heatmap.pkl'), 'wb'))
     de_tables_dict, de_metadata = load_de_results(all_transcripts)
     de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
-    pickle.dump(de_tables_dict, open(os.path.join(CACHE_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
-    de_metadata.to_parquet(os.path.join(CACHE_DIR, 'xena_de_metadata.parq'))
+    pickle.dump(de_tables_dict, open(os.path.join(OUTPUT_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
+    de_metadata.to_parquet(os.path.join(OUTPUT_DIR, 'xena_de_metadata.parq'))
     
     
 

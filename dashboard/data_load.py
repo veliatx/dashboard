@@ -18,9 +18,7 @@ from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import tabs
 
 import pyarrow.parquet as pq
-
-CACHE_DIR = '../cache'
-TPM_DESEQ2_FACTOR = 80
+from dashboard.etl import CACHE_DIR, TPM_DESEQ2_FACTOR
 
 
 @st.cache_data()

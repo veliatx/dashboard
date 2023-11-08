@@ -154,7 +154,7 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
         {
           'name': 'Study',
           'nameLocation': 'middle',
-          'nameGap': 50,
+          'nameGap': 90,
           'type': 'category',
           'data': list(df['velia_study'].values),
           'axisLabel': { 'interval': 0}#, 'rotate': 90}
@@ -163,7 +163,7 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
       'xAxis': [
         {'name': 'Approximate TPM \n (Transcripts in bold are DE with FDR < 1e-5 and abs(LFC) > 1)',
          'nameLocation': 'middle',
-         'nameGap': 30,
+         'nameGap': 20,
          'type': 'value'}
       ],
         'color': ['#237c94', '#d62418'],
@@ -180,7 +180,7 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
         },
       ],
     'grid': {
-          'left': 70,
+          'left': 110,
           'top': 50,
           'right': 120,
           'bottom': 80
