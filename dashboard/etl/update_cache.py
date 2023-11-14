@@ -4,6 +4,7 @@ from amino_acid_features import *
 from dashboard.app import load_mouse_blastp_results
 from dashboard.etl.sorf_query import parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
+from dashboard.data_load import load_esmfold
 import numpy as np
 
 import pandas as pd
@@ -116,6 +117,9 @@ if __name__ == '__main__':
 
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
     sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
+    # add esmfold data
+    esmfold = load_esmfold()
+    sorf_df['ESMFold plddt 90th percentile'] = [np.percentile(esmfold[s.replace('*', '')]['plddt'], 90) if s.replace('*', '') in esmfold else -1 for s in sorf_df['aa'].values]
     sorf_df.to_parquet(os.path.join(OUTPUT_DIR, 'sorf_df.parq'))
     # Done formatting
     

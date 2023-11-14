@@ -141,6 +141,8 @@ def sorf_details(sorf_df):
                                                                         columns='transcript_id',
                                                                         values='tpm', 
                                                                         aggfunc=np.nanmean).fillna(0.01).apply(lambda x: np.log2(x+1))
+                sample_sizes = selected_expression_ai['group'].value_counts()
+                selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
                 echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
