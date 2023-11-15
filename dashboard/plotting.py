@@ -9,6 +9,7 @@ import streamlit as st
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 from dashboard.util import query_de_transcripts, query_transcript_tpms, strip_ensembl_versions
+from dashboard.etl import DATA_DIR, CACHE_DIR
 import sqlite3
 
 def color_protein_terminal_ends(aa_seq, pdb_string):
@@ -54,7 +55,7 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
     """
     """
     dataframe = pd.read_sql("SELECT * FROM transcript_de WHERE transcript_de.transcript_id = '{0}'".format(transcript_id.split('.')[0]),
-                        sqlite3.connect('/home/ec2-user/repos/dashboard/cache/xena.db'))
+                        sqlite3.connect(CACHE_DIR / 'xena.db'))
     dataframe.rename({'TCGA Cancer Type': 'TCGA'}, axis=1, inplace=True)
     dataframe['DE'] = (dataframe['padj']<0.0001) & (np.abs(dataframe['log2FoldChange'])>=2) & \
                         (dataframe['Cancer Mean'].gt(4) | dataframe['GTEx Mean'].gt(4)) 

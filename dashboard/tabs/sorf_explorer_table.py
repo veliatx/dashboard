@@ -14,8 +14,9 @@ from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
 from dashboard import plotting, description
-from dashboard.util import filter_dataframe, convert_list_string, convert_df, query_de_transcripts
+from dashboard.util import filter_dataframe, convert_df, query_de_transcripts
 from dashboard.data_load import *
+from dashboard.etl import CACHE_DIR, DATA_DIR
 
 import sqlite3
 
@@ -174,7 +175,7 @@ def sorf_details(sorf_df):
                         selected_transcript_ai = value_ai
                     else:
                         selected_transcript_ai = selected_transcripts[0]
-                    db_address = '/home/ec2-user/repos/dashboard/data/autoimmune_expression_atlas_v1.db'
+                    db_address = DATA_DIR / 'autoimmune_expression_atlas_v1.db'
                     option_ai_de = plotting.bar_plot_expression_group_autoimmune(query_de_transcripts(selected_transcript_ai, db_address).fillna(0.01),
                                                                                  f'Autoimmune DE - {selected_transcript_ai}',
                                                                                  db_address)
