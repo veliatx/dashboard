@@ -33,7 +33,7 @@ def sorf_details(sorf_df):
                                                                       'Secreted and on Transcript(s)', 
                                                                       'All Secreted sORFs',
                                                                       'Translated and on Transcript(s)', 
-                                                                      'All Translated sORFs'), index = 2)
+                                                                      'All Translated sORFs'), index = 1)
     exist_on_transcript = df['transcripts_exact'].apply(len)
     if filter_option == 'Translated and on Transcript(s)':
         df = df[df['translated'] & exist_on_transcript]
