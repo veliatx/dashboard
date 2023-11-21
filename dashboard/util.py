@@ -3,6 +3,7 @@ from pandas.api.types import (
     is_datetime64_any_dtype,
     is_numeric_dtype,
     is_object_dtype,
+    is_list_like
 )
 
 import pandas as pd
@@ -40,6 +41,7 @@ def query_transcript_tpms(transcript_id_list,
 def convert_df(df):
     return df.to_csv().encode('utf-8')
 
+
 def filter_dataframe(df: pd.DataFrame, key='details') -> pd.DataFrame:
     """
     Adds a UI on top of a dataframe to let viewers filter columns
@@ -64,6 +66,7 @@ def filter_dataframe(df: pd.DataFrame, key='details') -> pd.DataFrame:
         if is_datetime64_any_dtype(df[col]):
             df[col] = df[col].dt.tz_localize(None)
 
+
     modification_container = st.container()
 
     with modification_container:
@@ -71,12 +74,12 @@ def filter_dataframe(df: pd.DataFrame, key='details') -> pd.DataFrame:
         for column in to_filter_columns:
             left, right = st.columns((1, 20))
             # Treat columns with < 10 unique values as categorical
-            if is_categorical_dtype(df[column]) or df[column].nunique() < 10:
+            if is_categorical_dtype(df[column]) or df[column].astype(str).nunique() < 10:
                 user_cat_input = right.multiselect(
                     f"Values for {column}",
                     df[column].unique(),
                     default=list(df[column].unique()),
-                    key=key
+                    key=column
                 )
                 df = df[df[column].isin(user_cat_input)]
             elif is_numeric_dtype(df[column]):
@@ -103,6 +106,9 @@ def filter_dataframe(df: pd.DataFrame, key='details') -> pd.DataFrame:
                     user_date_input = tuple(map(pd.to_datetime, user_date_input))
                     start_date, end_date = user_date_input
                     df = df.loc[df[column].between(start_date, end_date)]
+            
+            #elif is_list_like(df[col]):
+            #    df[col] = df[col].astype(str)
             else:
                 user_text_input = right.text_input(
                     f"Substring or regex in {column}",

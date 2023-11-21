@@ -18,6 +18,7 @@ from dashboard.util import filter_dataframe, convert_df, query_de_transcripts
 from dashboard.data_load import *
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
+import random
 import sqlite3
 
 def sorf_details(sorf_df):
@@ -30,18 +31,16 @@ def sorf_details(sorf_df):
     df.drop('phylocsf_vals', axis=1, inplace=True)
     from dashboard.tabs.riboseq_atlas import get_average_coverage
     ribo_df = get_average_coverage()
-    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>100) & (ribo_df.max(axis=1)>100)].index
+    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
     array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
     df['Ribo-Seq RPKM Support'] = array_to_add
-    # df['Ribo-Seq RPKM Support'] = False
-    # df.loc[vtx_with_any_support] = True
-    print(df.columns)
+
     filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs',
                                                                       'Secreted and on Transcript(s)', 
                                                                       'All Secreted sORFs',
                                                                       'Translated and on Transcript(s)', 
-                                                                      'All Translated sORFs'), index = 2)
-    exist_on_transcript = df['transcripts_exact'].apply(len)
+                                                                      'All Translated sORFs'), index = 1)
+    exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
     if filter_option == 'Translated and on Transcript(s)':
         df = df[df['translated'] & exist_on_transcript]
     elif filter_option == 'All sORFs':
@@ -53,7 +52,7 @@ def sorf_details(sorf_df):
     elif filter_option ==  'All Translated sORFs':
         df = df[df['translated']]
 
-    df = filter_dataframe(df, 'explorer_filter')
+    df = filter_dataframe(df, f'explorer_filter')
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
