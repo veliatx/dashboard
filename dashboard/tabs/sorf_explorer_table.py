@@ -28,7 +28,14 @@ def sorf_details(sorf_df):
     view_cols.remove('phylocsf_vals')
     df = sorf_df.copy()
     df.drop('phylocsf_vals', axis=1, inplace=True)
-    
+    from dashboard.tabs.riboseq_atlas import get_average_coverage
+    ribo_df = get_average_coverage()
+    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>100) & (ribo_df.max(axis=1)>100)].index
+    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
+    df['Ribo-Seq RPKM Support'] = array_to_add
+    # df['Ribo-Seq RPKM Support'] = False
+    # df.loc[vtx_with_any_support] = True
+    print(df.columns)
     filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs',
                                                                       'Secreted and on Transcript(s)', 
                                                                       'All Secreted sORFs',
@@ -191,7 +198,7 @@ def sorf_details(sorf_df):
                 fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
                     x='group', points = 'all',
                     y=selected_transcript_ai, height=500,
-                    width=800
+                    width=800 
                 )
                 st.plotly_chart(fig_ai, use_container_width=True)
                 

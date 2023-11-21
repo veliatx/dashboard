@@ -18,7 +18,7 @@ from dashboard.etl.sorf_query import load_jsonlines_table
 from dashboard import tabs
 
 import pyarrow.parquet as pq
-from dashboard.etl import CACHE_DIR, TPM_DESEQ2_FACTOR
+from dashboard.etl import CACHE_DIR, TPM_DESEQ2_FACTOR, DATA_DIR
 
 
 @st.cache_data()
@@ -70,7 +70,7 @@ def load_esmfold():
     """
     """
     esmfold = {}
-    with gzip.open('../data/phase1to7_all_esmfold.jsonlines.gz') as fopen:
+    with gzip.open(DATA_DIR / 'phase1to7_all_esmfold.jsonlines.gz') as fopen:
         j_reader = jsonlines.Reader(fopen)
         for l in j_reader:
             esmfold[l['sequence']] = l
@@ -119,7 +119,7 @@ def load_mouse_blastp_results(CACHE_DIR = '../cache'):
 
 @st.cache_data()
 def load_phylocsf_data():
-    pcsf = pd.read_csv(f"../data/interim_phase1to7_all_phylocsf-vals_20230628.csv", index_col=0)
+    pcsf = pd.read_csv(DATA_DIR / f"interim_phase1to7_all_phylocsf-vals_20230628.csv", index_col=0)
     pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]

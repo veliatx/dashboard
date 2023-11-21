@@ -74,7 +74,8 @@ if __name__ == '__main__':
     sorf_df['protein_xrefs'] = protein_xrefs
     sorf_df['aa_length'] = sorf_df.apply(lambda x: len(x.aa), axis=1)
 
-    sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
+    sorf_df = fix_missing_phase_ids(sorf_df)
+    # sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
 
     cols = ['show_details', 'vtx_id', 'aa_length', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
             'source', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',  
@@ -90,7 +91,7 @@ if __name__ == '__main__':
        for ix, row in sorf_df.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
     python_executable = '/home/ec2-user/anaconda/envs/protein_tools/bin/python'
-    subprocess.run(shlex.split(f"{python_executable} /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
+    # subprocess.run(shlex.split(f"{python_executable} /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
     # Massage table to standard format
     _, blastp_table = load_mouse_blastp_results(CACHE_DIR = OUTPUT_DIR)
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
@@ -112,7 +113,7 @@ if __name__ == '__main__':
             'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
             'phylocsf_vals']], left_index=True, right_index=True, how='left')
 
-    with open('../../data/all_secreted_phase1to7.txt', 'r') as f:
+    with open(DATA_DIR / 'all_secreted_phase1to7.txt', 'r') as f:
         secreted_ids = [i.strip() for i in f.readlines()]
 
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
