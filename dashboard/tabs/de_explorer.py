@@ -93,14 +93,15 @@ def de_page(sorf_df):
         selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
         # st.plotly_chart(volcano_fig)
         
-        st.write(selected_points)
+        # st.write(selected_points)
         selected_vtx_ids = []
         for x in selected_points:
-            hoverdata = volcano_fig.data[0]['customdata'][x['pointIndex']][1]
+            hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][1]
             selected_vtx_ids += hoverdata
             # st.write(hoverdata)
         # st.write(selected_vtx_ids)
-        st.write(volcano_fig.data)[0]['customdata']
+        # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
+    
         st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
     # dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids])
     
