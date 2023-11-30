@@ -30,6 +30,32 @@ def load_autoimmune_atlas():
 @st.cache_data()
 def load_sorf_df_conformed():
     df = pd.read_parquet(os.path.join(CACHE_DIR, 'sorf_df.parq'))
+    
+    # TODO remove this as temp addition
+    ribo_df = pd.read_excel('../data/Secreted_mP_Riboseq_SAF.xlsx')
+    ribo_vtx = set(ribo_df[ribo_df['manual_check'] == 1]['vtx_id'])
+    ccle_df = pd.read_excel('../data/SummaryIdentification_CCLE_strongerConfidence.xlsx', index_col=0)
+    gtex_df = pd.read_excel('../data/SummaryIdentification_GTEX_strongerConfidence.xlsx', index_col=0)
+
+    ccle_vtx = set(ccle_df['vtx_id'])
+    gtex_vtx = set(gtex_df['vtx_id'])
+
+    ms_vtx = gtex_vtx.union(ccle_vtx)
+    support_vtx = ms_vtx.union(ribo_vtx)
+
+    df['manual_riboseq'] = df.apply(lambda x: True if x.vtx_id in ribo_vtx else False, axis=1)
+    df['MS_evidence'] = df.apply(lambda x: True if x.vtx_id in ms_vtx else False, axis=1)
+    df['MS or Riboseq'] = df.apply(lambda x: True if x.vtx_id in support_vtx else False, axis=1)
+
+    feat_df = pd.read_csv('../data/interim_phase1to8_all_20231012.csv')
+    feat_df.set_index('vtx_id', inplace=True)
+    df = df.merge(feat_df[['tblastn_hit_id', 'tblastn_description',
+                           'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
+                           'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)
+    
+    df.index.name = 'vtx_id'
+    df['vtx_id'] = df.index
+
     return df
 
 @st.cache_data()

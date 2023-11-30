@@ -7,9 +7,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import streamlit_scrollable_textbox as stx
 
-
 from streamlit_plotly_events import plotly_events
-
 from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
@@ -29,6 +27,7 @@ def sorf_details(sorf_df):
     view_cols.remove('phylocsf_vals')
     df = sorf_df.copy()
     df.drop('phylocsf_vals', axis=1, inplace=True)
+
     from dashboard.tabs.riboseq_atlas import get_average_coverage
     ribo_df = get_average_coverage()
     vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
