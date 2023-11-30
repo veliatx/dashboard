@@ -196,7 +196,7 @@ def sorf_details(sorf_df):
                 fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
                     x='group', points = 'all',
                     y=selected_transcript_ai, height=500,
-                    width=800
+                    width=800 
                 )
                 st.plotly_chart(fig_ai, use_container_width=True)
                 
