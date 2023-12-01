@@ -24,6 +24,43 @@ pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
 GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
+import boto3
+import gzip
+from io import BytesIO
+from Bio import SeqIO
+
+# Initialize a boto3 client for S3
+s3_client = boto3.client('s3')
+# S3 Bucket and file details
+bucket_name = 'velia-annotation-dev'
+s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
+# Get the file object from S3
+file_obj = s3_client.get_object(Bucket=bucket_name, Key=s3_file_key)
+# Read the file content
+fasta_gzipped = file_obj['Body'].read()
+# Decompress the file
+with gzip.open(BytesIO(fasta_gzipped), 'rt') as f:
+    # Parse the FASTA file
+    genome_reference = SeqIO.to_dict(SeqIO.parse(f, "fasta"))
+    
+def extract_nucleotide_sequence_veliadb(o, genome_seq):
+    seqs = []
+    blocks = [int(x) for x in o.block_sizes.split(';')]
+    chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
+    start = o.start - 1
+
+    chrom = o.assembly.ucsc_style_name
+   
+    for i, block in enumerate(blocks):
+        if o.strand == '-':
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + 1 + blocks[i])].reverse_complement().seq).upper())
+        else:
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + blocks[i] +1 )].seq).upper())
+    
+    if o.strand == '-':    
+        seqs.reverse()
+    seq = ''.join(seqs)     
+    return seq, str(Seq(seq).translate())  
 
 current_folder = pathlib.Path(__file__).parents[0]
 # Function to parse the FASTA content
@@ -52,9 +89,19 @@ def parallel_sorf_query(vtx_id):
     else:
         current_orf = orfs[0]
     # Loop over orfs, and populate sorf_table file with attributes of interest
-    # nt, aa = extract_nucleotide_sequence_veliadb(current_orf, reference)
-    nt = current_orf.nt_seq
-    aa = current_orf.aa_seq
+    nt_reconstructed, aa = extract_nucleotide_sequence_veliadb(current_orf, genome_reference)
+    aa = aa.strip('*')
+    if current_orf.nt_seq == '':
+        nt = nt_reconstructed
+    else:
+        nt = current_orf.nt_seq
+
+    # nt = current_orf.nt_seq
+    # aa = current_orf.aa_seq
+    db_aa = current_orf.aa_seq.strip('*')
+    if not db_aa.strip('*') == aa.strip('*'):
+        print(f'warning: {current_orf.id} has inconsistent coordinates in veliadb')
+        # raise ValueError("Sequence coordinate nucleotides don't match reference amino acid sequence.")
     r_internal = find_seq_substring(nt, transcripts)
     transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
     # overlapping_tids = query_overlapping_transcripts(current_orf, session)
@@ -63,7 +110,7 @@ def parallel_sorf_query(vtx_id):
     attributes['transcripts_exact'] = transcripts_exact
     # attributes['transcripts_overlapping'] = overlapping_tids
     # if attributes['aa'] == '':
-    attributes['aa'] = aa
+    attributes['aa'] = db_aa.replace('*', '')
     # if attributes['nucl'] == '':
     attributes['nucl'] = nt
     session.close()
@@ -146,70 +193,26 @@ def parse_orf(orf, session):
         'source': source
     }
     
-def extract_nucleotide_sequence_veliadb(orf, reference):
-# orf = [i for i in orfs if ';' in i.block_sizes][2]
-    if orf.start == -1 or orf.end == -1:
-        return '', ''
-    chrom = orf.assembly.ucsc_style_name
-    blocks = list(zip(orf.chrom_starts.split(';'), orf.block_sizes.split(';'), orf.phases.split(';')))
-    strand = orf.strand
-    nucl = []
-    for ix, (start, size, phase) in enumerate(blocks):
-        start = int(start) - 1
-        size = int(size)
-        phase = int(phase)
-        if strand == '-':
-            if ix == 0:
-                s = reference[chrom][start : start+(size - 3)]
-            else:
-                s = reference[chrom][start : start+size]
-            s = s.complement.seq[::-1]
-        else:
-            if ix == len(blocks)-1:
-                s = reference[chrom][start : start+(size-3)]
-            else:
-                s = reference[chrom][start : start+size]
-            s = s.seq
-        nucl.append(s)
-    if strand == '-':
-        nucl = nucl[::-1]
-        nucl = ' '.join(nucl)
-    else:
-        nucl = ' '.join(nucl)
-    return nucl, str(Seq(nucl.replace(' ', '')).translate())
+def extract_nucleotide_sequence_veliadb(o, genome_seq):
+    seqs = []
+    blocks = [int(x) for x in o.block_sizes.split(';')]
+    chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
+    start = o.start - 1
 
-def extract_nucleotide_sequence_broken_psl_starts(orf, reference):
-# orf = [i for i in orfs if ';' in i.block_sizes][2]
-    if orf.start == -1 or orf.end == -1:
-        return '', ''
-    chrom = orf.assembly.ucsc_style_name
-    blocks = list(zip(orf.chrom_starts.split(';'), orf.block_sizes.split(';'), orf.phases.split(';')))
-    strand = orf.strand
-    nucl = []
-    for ix, (start, size, phase) in enumerate(blocks):
-        start = int(start)
-        size = int(size)
-        phase = int(phase)
-        if strand == '-':
-            s = reference[chrom][start+2 : start+size+1]
-            s = s.complement.seq[::-1]
+    chrom = o.assembly.ucsc_style_name
+   
+    for i, block in enumerate(blocks):
+        if o.strand == '-':
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + 1 + blocks[i])].reverse_complement().seq).upper())
         else:
-            s = reference[chrom][start-1 : start+size-3]
-            s = s.seq
-        nucl.append(s)
-    if strand == '-' and len(blocks)>1:
-        nucl[-1] = reference[chrom][start+3 : start+size].complement.seq[::-1]
-    elif strand == '-' and len(blocks)==1:
-        nucl[0] = nucl[0][1:]
-    if strand == '-':
-        nucl = nucl[::-1]
-        nucl = ' '.join(nucl)
-    else:
-        nucl = ' '.join(nucl)
-    return nucl, str(Seq(nucl.replace(' ', '')).translate())
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + blocks[i] +1 )].seq).upper())
+    
+    if o.strand == '-':    
+        seqs.reverse()
+    seq = ''.join(seqs)     
+    return seq, str(Seq(seq).translate())  
 
-import pyfaidx
-import fsspec
+
 from tqdm import tqdm
 import os
 

@@ -2,7 +2,7 @@ from sorf_query import *
 from transcript_features import *
 from amino_acid_features import *
 from dashboard.app import load_mouse_blastp_results
-from dashboard.etl.sorf_query import parse_sorf_phase
+from dashboard.etl.sorf_query import parse_sorf_phase, GENOME_REFERENCE_PATH
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold
 import numpy as np
@@ -23,15 +23,14 @@ pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
 
+# seq_records now contains your data as a dictionary of SeqRecord objects
+
 if __name__ == '__main__':
     # OUTPUT_DIR = '../../cache_update'
     # CACHE_DIR = OUTPUT_DIR
     OUTPUT_DIR = CACHE_DIR
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    os.makedirs(os.path.join(OUTPUT_DIR, 'protein_data'), exist_ok=True)
-    
-
-
+    os.makedirs(os.path.join(OUTPUT_DIR, 'protein_data'), exist_ok=True) 
     input_file = sys.argv[1]
     with open(input_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
