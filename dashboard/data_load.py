@@ -96,7 +96,7 @@ def load_esmfold():
     """
     """
     esmfold = {}
-    with gzip.open(DATA_DIR / 'phase1to7_all_esmfold.jsonlines.gz') as fopen:
+    with open(CACHE_DIR / 'protein_data' / 'esmfold.jsonlines') as fopen:
         j_reader = jsonlines.Reader(fopen)
         for l in j_reader:
             esmfold[l['sequence']] = l

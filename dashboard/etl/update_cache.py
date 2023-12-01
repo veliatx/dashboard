@@ -16,7 +16,7 @@ import json
 import pickle
 import os
 
-from dashboard.etl import CACHE_DIR
+from dashboard.etl import CACHE_DIR, PROTEIN_TOOLS_PATH
 
 NCPU = 16
 pd.options.display.max_columns = 100
@@ -29,6 +29,8 @@ if __name__ == '__main__':
     OUTPUT_DIR = CACHE_DIR
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(os.path.join(OUTPUT_DIR, 'protein_data'), exist_ok=True)
+    
+
 
     input_file = sys.argv[1]
     with open(input_file) as fhandle:
@@ -67,7 +69,7 @@ if __name__ == '__main__':
                                         .join(Protein, Protein.id == ProteinXref.protein_id)\
                                         .filter(Protein.aa_seq == row.aa).all()]))
 
-
+    print('parsing sorf_phase')
     phase_ids, phase_entries = parse_sorf_phase(sorf_df, session)
     sorf_df['screening_phase_id'] = phase_ids
     sorf_df['screening_phase'] = phase_entries
@@ -90,8 +92,10 @@ if __name__ == '__main__':
     with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_df.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
-    python_executable = '/home/ec2-user/anaconda/envs/protein_tools/bin/python'
-    # subprocess.run(shlex.split(f"{python_executable} /home/ec2-user/repos/protein_tools/dashboard_etl.py -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"))
+    # python_executable = '/home/ubuntu//envs/protein_tools/bin/python'
+    cmd = f"python {PROTEIN_TOOLS_PATH} -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"
+    print(cmd)
+    subprocess.run(shlex.split(cmd))
     # Massage table to standard format
     _, blastp_table = load_mouse_blastp_results(CACHE_DIR = OUTPUT_DIR)
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')

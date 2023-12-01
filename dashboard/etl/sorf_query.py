@@ -294,10 +294,13 @@ def fix_missing_phase_ids(sorf_df):
     sorf_df = sorf_df.copy()
     missing_phase_ids = sorf_df[sorf_df['screening_phase']=='-1'].index
     interim_sheet = pd.read_csv(os.path.join(DATA_DIR, 'interim_phase1to7_all_20230717.csv'), index_col=0)
-    source = interim_sheet.loc[sorf_df[sorf_df['screening_phase']=='-1'].index]['source']
+    # source = interim_sheet.loc[sorf_df[sorf_df['screening_phase']=='-1'].index]['source']
     new_phase_ids = []
     for vtx in missing_phase_ids:
-        s = source.loc[vtx]
+        if vtx in interim_sheet.index:
+            s = interim_sheet.loc[vtx, 'source']
+        else:
+            s = 'Not Screened'
         if s.startswith('velia_phase1'):
             i = 'Phase 1'
         elif s.startswith('velia_phase2'):
@@ -305,7 +308,7 @@ def fix_missing_phase_ids(sorf_df):
         elif s.startswith('velia_phase3'):
             i = 'Phase 3'
         else:
-            print(vtx)
+            i = s
         new_phase_ids.append(i)
     sorf_df.loc[missing_phase_ids, 'screening_phase'] = new_phase_ids
     return sorf_df
