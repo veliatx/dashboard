@@ -2,9 +2,11 @@ from sorf_query import *
 from transcript_features import *
 from amino_acid_features import *
 from dashboard.app import load_mouse_blastp_results
-from dashboard.etl.sorf_query import parse_sorf_phase, GENOME_REFERENCE_PATH
+from dashboard.etl.sorf_query import parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold
+import sqlite3
+from sqlalchemy import create_engine, text
 import numpy as np
 
 import pandas as pd
@@ -26,6 +28,24 @@ pd.options.display.max_colwidth = 200
 # seq_records now contains your data as a dictionary of SeqRecord objects
 
 if __name__ == '__main__':
+    import boto3
+    import gzip
+    from io import BytesIO
+    from Bio import SeqIO
+
+    # Initialize a boto3 client for S3
+    s3_client = boto3.client('s3')
+    # S3 Bucket and file details
+    bucket_name = 'velia-annotation-dev'
+    s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
+    # Get the file object from S3
+    file_obj = s3_client.get_object(Bucket=bucket_name, Key=s3_file_key)
+    # Read the file content
+    fasta_gzipped = file_obj['Body'].read()
+    # Decompress the file
+    with gzip.open(BytesIO(fasta_gzipped), 'rt') as f:
+        # Parse the FASTA file
+        genome_reference = SeqIO.to_dict(SeqIO.parse(f, "fasta"))
     # OUTPUT_DIR = '../../cache_update'
     # CACHE_DIR = OUTPUT_DIR
     OUTPUT_DIR = CACHE_DIR
@@ -38,17 +58,20 @@ if __name__ == '__main__':
     session = base.Session() # connect to db
     orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
     missing_orfs = set(ids) - set([i.id for i in orfs])
+    def pfunc(i):
+        r = parallel_sorf_query(i, genome_reference)
+        return r
     if len(missing_orfs) > 0:
         print('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
     with open(os.path.join(OUTPUT_DIR, 'sorf_table.jsonlines'), 'w') as fopen:
         with mp.Pool(NCPU) as ppool:
-            for r in tqdm(ppool.imap(parallel_sorf_query, ids), total=len(ids)):
+            for r in tqdm(ppool.imap(pfunc, ids), total=len(ids)):
                 fopen.write(json.dumps(r))
                 fopen.write('\n')
             
     sorf_df = load_jsonlines_table(os.path.join(OUTPUT_DIR, 'sorf_table.jsonlines'), index_col='vtx_id')
     # Format table to conform to standardized entries
-
+    del genome_reference
     session = base.Session()
     sorf_df['index_copy'] = sorf_df.index
 
@@ -165,6 +188,19 @@ if __name__ == '__main__':
     pickle.dump(xena_exact_heatmap_data, open(os.path.join(OUTPUT_DIR, 'xena_exact_heatmap.pkl'), 'wb'))
     de_tables_dict, de_metadata = load_de_results(all_transcripts)
     de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
+    tables = []
+    for k, v in de_tables_dict.items():
+        v['transcript_id'] = k
+        tables.append(v)
+    pd.concat(tables).rename({'log2FC': 'log2FoldChange', 
+                            'Cancer Average': 'Cancer Mean', 
+                            'GTEx Average': 'GTEx Mean'}, axis=1).to_sql('transcript_de', sqlite3.connect(CACHE_DIR / 'xena.db'))
+
+    engine = create_engine(f"sqlite:///{CACHE_DIR / 'xena.db'}", future=True)
+    with engine.connect() as conn:
+        conn.execute(text(f"CREATE INDEX idx_transcript_id_de ON transcript_de (transcript_id);"))
+        conn.commit()
+    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(CACHE_DIR / 'xena.db'), index=False)
     pickle.dump(de_tables_dict, open(os.path.join(OUTPUT_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
     de_metadata.to_parquet(os.path.join(OUTPUT_DIR, 'xena_de_metadata.parq'))
     

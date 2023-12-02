@@ -56,12 +56,12 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
     """
     dataframe = pd.read_sql("SELECT * FROM transcript_de WHERE transcript_de.transcript_id = '{0}'".format(transcript_id.split('.')[0]),
                         sqlite3.connect(CACHE_DIR / 'xena.db'))
-    dataframe.rename({'TCGA Cancer Type': 'TCGA'}, axis=1, inplace=True)
+    dataframe.rename({'index': 'TCGA'}, axis=1, inplace=True)
     dataframe['DE'] = (dataframe['padj']<0.0001) & (np.abs(dataframe['log2FoldChange'])>=2) & \
                         (dataframe['Cancer Mean'].gt(4) | dataframe['GTEx Mean'].gt(4)) 
     
     dataframe.sort_values(by='Cancer Mean', inplace=True)
-    de_metadata = pd.read_sql("SELECT * from sample_metadata_de", sqlite3.connect('../cache/xena.db'))
+    de_metadata = pd.read_sql("SELECT * from sample_metadata_de", sqlite3.connect(CACHE_DIR / 'xena.db'))
     tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
     option = {
       'title': {'text': title},
@@ -400,16 +400,16 @@ def altair_protein_features_plot(df):
     return fig+base.mark_text(baseline='middle').encode(alt.Text('aa:O'))
 
 
-def plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold):
+def plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, esmfold):
     # try:
     if vtx_id in phylocsf_dataframe.index:
         phylo_array = phylocsf_dataframe.loc[vtx_id, 'phylocsf_vals'][::3]
     else:
         phylo_array = [np.nan]*len(sorf_aa_seq)
-    kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
+    # kib = [i*100 for i in kibby.loc[vtx_id, 'conservation']]
     plddt = esmfold[sorf_aa_seq]['plddt']
     rows = []
-    for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt, 'Kibby Conservation': kib}.items():
+    for (j_key, j_vals) in {'PhyloCSF': phylo_array, 'plDDT': plddt}.items():
         for i, i_val in enumerate(j_vals):
             rows.append((j_key, i, i_val))
     cons_altair_table = pd.DataFrame(rows, columns = ['Tool', 'Position', 'value'])

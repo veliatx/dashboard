@@ -22,26 +22,6 @@ from dashboard.etl import CACHE_DIR, DATA_DIR
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
-
-GENOME_REFERENCE_PATH = 's3://velia-annotation-dev/genomes/hg38/GRCh38.p13.genome.fa.gz'
-import boto3
-import gzip
-from io import BytesIO
-from Bio import SeqIO
-
-# Initialize a boto3 client for S3
-s3_client = boto3.client('s3')
-# S3 Bucket and file details
-bucket_name = 'velia-annotation-dev'
-s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
-# Get the file object from S3
-file_obj = s3_client.get_object(Bucket=bucket_name, Key=s3_file_key)
-# Read the file content
-fasta_gzipped = file_obj['Body'].read()
-# Decompress the file
-with gzip.open(BytesIO(fasta_gzipped), 'rt') as f:
-    # Parse the FASTA file
-    genome_reference = SeqIO.to_dict(SeqIO.parse(f, "fasta"))
     
 def extract_nucleotide_sequence_veliadb(o, genome_seq):
     seqs = []
@@ -74,7 +54,7 @@ with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcri
     transcripts = parse_fasta(transcripts)
     transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
-def parallel_sorf_query(vtx_id):
+def parallel_sorf_query(vtx_id, genome_reference):
 # Query DB
     session = base.Session() # connect to db
     orfs = session.query(Orf).filter(Orf.id == vtx_id).all()

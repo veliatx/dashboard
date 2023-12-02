@@ -50,7 +50,7 @@ def load_sorf_df_conformed():
 
     tblastn_columns = ['vtx_id', 'tblastn_hit_id', 'tblastn_description', 'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length', 
                        'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']
-    tblastn_df = pd.read_table(DATA_DIR / 'interim_phase1to8_all_20231012.csv')
+    tblastn_df = pd.read_csv(DATA_DIR / 'interim_phase1to8_all_20231012.csv')
     tblastn_df.set_index('vtx_id', inplace=True)
     df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
                            'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',

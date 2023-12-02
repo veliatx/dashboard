@@ -97,7 +97,7 @@ def sorf_details(sorf_df):
     autoimmune_metadata = load_autoimmune_atlas()
     esmfold = load_esmfold()
     blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
-    kibby = load_kibby_results(sorf_df)
+    # kibby = load_kibby_results(sorf_df)
     protein_features_df = load_protein_feature_string_representations()
     phylocsf_dataframe = load_phylocsf_data()
     xena_overlap = []
@@ -214,7 +214,7 @@ def sorf_details(sorf_df):
 
                 plddt = esmfold[sorf_aa_seq]['plddt']
                 # Plot plDDT, Phylocsf, and kibby
-                achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, kibby, esmfold)
+                achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, esmfold)
                 col3.altair_chart(achart, use_container_width=False)
                         
             with col4:
