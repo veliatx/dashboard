@@ -1,3 +1,5 @@
+from tqdm import tqdm
+
 from sorf_query import *
 from transcript_features import *
 from amino_acid_features import *

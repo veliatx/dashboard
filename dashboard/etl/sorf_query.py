@@ -1,15 +1,16 @@
+import json
+import jsonlines
+import os
+import pathlib
+import re
+import smart_open
 
 import pandas as pd
-import smart_open
 from tqdm import tqdm
-import os
+
 from Bio.Seq import Seq
 from Bio import SeqIO
-
 from types import SimpleNamespace
-import re
-import pathlib
-
 from io import StringIO
 from copy import deepcopy
 from sqlalchemy import and_, or_
@@ -27,20 +28,20 @@ def extract_nucleotide_sequence_veliadb(o, genome_seq):
     seqs = []
     blocks = [int(x) for x in o.block_sizes.split(';')]
     chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
-    start = o.start - 1
 
     chrom = o.assembly.ucsc_style_name
    
     for i, block in enumerate(blocks):
         if o.strand == '-':
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + 1 + blocks[i])].reverse_complement().seq).upper())
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + block + 1)].reverse_complement().seq).upper())
         else:
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + blocks[i] +1 )].seq).upper())
+            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + block + 1)].seq).upper())
     
     if o.strand == '-':    
         seqs.reverse()
     seq = ''.join(seqs)     
-    return seq, str(Seq(seq).translate())  
+    return seq, str(Seq(seq).translate())
+
 
 current_folder = pathlib.Path(__file__).parents[0]
 # Function to parse the FASTA content
@@ -49,61 +50,70 @@ def parse_fasta(fasta_content):
     records = list(SeqIO.parse(fasta_io, "fasta"))
     return records
 
+
 with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcripts.fa.gz') as f:
     transcripts = f.read()
     transcripts = parse_fasta(transcripts)
     transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
+
 def parallel_sorf_query(vtx_id, genome_reference):
     # Query DB
     session = base.Session() # connect to db
-    orfs = session.query(Orf).filter(Orf.id == vtx_id).all()
-    if len(orfs) == 0:
-        print(f"{vtx_id} not found in veliadb")
-        session.close()
-        # return {}
-    elif len(orfs) > 1:
-        print(f"{vtx_id} had multiple entries found in veliadb")
-        session.close()
-        # return {}
-    else:
-        current_orf = orfs[0]
-    # Loop over orfs, and populate sorf_table file with attributes of interest
     try:
-        nt_reconstructed, aa = extract_nucleotide_sequence_veliadb(current_orf, genome_reference)
-        aa = aa.strip('*')
-    except:
-        print(f'Could not extract sequence for {vtx_id}')
-        nt_reconstructed = ''
-        aa = ''
-
-    if current_orf.nt_seq == '':
+        orf = session.query(Orf).filter(Orf.id == vtx_id).one()
+    except Exception as e:
+        print(e)
+    
+    if orf.start != -1 and orf.nt_seq == '' or orf.aa_seq == '':
+        try:
+            nt_reconstructed, aa_reconstructed = extract_nucleotide_sequence_veliadb(orf, genome_reference)
+            aa_reconstructed = aa_reconstructed.strip('*')
+        except:
+            print(f'Could not extract sequence for {vtx_id}')
+            if orf.aa_seq == '':
+                print(f'No registered AA seq')
+                return
+    else:
+        nt_reconstructed = orf.nt_seq
+        aa_reconstructed = orf.aa_seq
+        
+    if orf.nt_seq == nt_reconstructed:
+        nt = orf.nt_seq
+    elif orf.nt_seq == '':
         nt = nt_reconstructed
     else:
-        nt = current_orf.nt_seq
+        nt = orf.nt_seq
 
-    # nt = current_orf.nt_seq
-    # aa = current_orf.aa_seq
-    db_aa = current_orf.aa_seq.strip('*')
-    if not db_aa.strip('*') == aa.strip('*'):
-        print(f'warning: {current_orf.id} has inconsistent coordinates in veliadb')
-        # raise ValueError("Sequence coordinate nucleotides don't match reference amino acid sequence.")
+    if orf.aa_seq == aa_reconstructed:
+        aa = orf.aa_seq
+    elif orf.aa_seq == '':
+        aa = aa_reconstructed
+    else:
+        print(f'warning: {orf.id} has inconsistent coordinates in veliadb')
+        aa = orf.aa_seq
+
+    aa = aa.strip('*')
+
     r_internal = find_seq_substring(nt, transcripts)
     transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
     # overlapping_tids = query_overlapping_transcripts(current_orf, session)
     # overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
-    attributes = parse_orf(current_orf, session)
+    attributes = parse_orf(orf, session)
     attributes['transcripts_exact'] = transcripts_exact
     # attributes['transcripts_overlapping'] = overlapping_tids
     # if attributes['aa'] == '':
-    attributes['aa'] = db_aa.replace('*', '')
+    attributes['aa'] = aa.replace('*', '')
     # if attributes['nucl'] == '':
     attributes['nucl'] = nt
     session.close()
     return attributes
 
-# class wrapper for orf query results to allow multiprocessing to iterate over orf objects
+
 class OrfData(object):
+    """
+    Class wrapper for orf query results to allow multiprocessing to iterate over orf objects
+    """
     def __init__(self, orf_query_object):
         self.id = orf_query_object.id
         self.start = orf_query_object.start
@@ -115,7 +125,8 @@ class OrfData(object):
         self.phases = orf_query_object.phases
         self.assembly_id = orf_query_object.assembly_id
         self.secondary_orf_id = orf_query_object.secondary_orf_id
-        
+
+
 def parse_orf(orf, session):
     orf_xrefs = ';'.join([ox.xref for ox in session.query(OrfXref).filter(OrfXref.orf_id == orf.id).all() if ox.xref])
     pattern = r'U\w{9}-[0-9]*'
@@ -134,8 +145,6 @@ def parse_orf(orf, session):
     phases = orf.phases
     seqs = orf.aa_seq
     source = ';'.join(set([x.orf_data_source.name for x in orf.xref]))
-    
-    
         
     ucsc_track = f'{orf.assembly.ucsc_style_name}:{orf.start}-{orf.end}'
 
@@ -178,29 +187,7 @@ def parse_orf(orf, session):
         'protein_xrefs': protein_xrefs,
         'source': source
     }
-    
-def extract_nucleotide_sequence_veliadb(o, genome_seq):
-    seqs = []
-    blocks = [int(x) for x in o.block_sizes.split(';')]
-    chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
-    start = o.start - 1
 
-    chrom = o.assembly.ucsc_style_name
-   
-    for i, block in enumerate(blocks):
-        if o.strand == '-':
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + 1 + blocks[i])].reverse_complement().seq).upper())
-        else:
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + blocks[i] +1 )].seq).upper())
-    
-    if o.strand == '-':    
-        seqs.reverse()
-    seq = ''.join(seqs)     
-    return seq, str(Seq(seq).translate())  
-
-
-from tqdm import tqdm
-import os
 
 def find_seq_substring(query, target_dict):
     if query == '':
@@ -240,18 +227,19 @@ def run_id_mapping_parallel(orfs, NCPU = 1):
             results[r[0]] = r[1:]
     return results
 
-import jsonlines
-import json
-from tqdm import tqdm
+
 def load_jsonlines_table(path_to_file, index_col = None):
     with open(path_to_file) as fh:
         results = []
         for line in tqdm(fh.readlines()):
-            results.append(json.loads(line))
+            res = json.loads(line)
+            if res:
+                results.append(res)
     df = pd.DataFrame(results)
     if index_col is not None:
         df.index = df[index_col]
     return df
+
 
 def parse_sorf_phase(sorf_df, session):
     phase_ids = []
