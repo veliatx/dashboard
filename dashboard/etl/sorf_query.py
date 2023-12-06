@@ -55,7 +55,7 @@ with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcri
     transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
 def parallel_sorf_query(vtx_id, genome_reference):
-# Query DB
+    # Query DB
     session = base.Session() # connect to db
     orfs = session.query(Orf).filter(Orf.id == vtx_id).all()
     if len(orfs) == 0:
@@ -69,8 +69,14 @@ def parallel_sorf_query(vtx_id, genome_reference):
     else:
         current_orf = orfs[0]
     # Loop over orfs, and populate sorf_table file with attributes of interest
-    nt_reconstructed, aa = extract_nucleotide_sequence_veliadb(current_orf, genome_reference)
-    aa = aa.strip('*')
+    try:
+        nt_reconstructed, aa = extract_nucleotide_sequence_veliadb(current_orf, genome_reference)
+        aa = aa.strip('*')
+    except:
+        print(f'Could not extract sequence for {vtx_id}')
+        nt_reconstructed = ''
+        aa = ''
+
     if current_orf.nt_seq == '':
         nt = nt_reconstructed
     else:

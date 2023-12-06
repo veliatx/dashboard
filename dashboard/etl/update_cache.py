@@ -1,10 +1,9 @@
 from sorf_query import *
 from transcript_features import *
 from amino_acid_features import *
-from dashboard.app import load_mouse_blastp_results
 from dashboard.etl.sorf_query import parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
-from dashboard.data_load import load_esmfold
+from dashboard.data_load import load_esmfold, load_mouse_blastp_results
 import sqlite3
 from sqlalchemy import create_engine, text
 import numpy as np
@@ -192,6 +191,7 @@ if __name__ == '__main__':
     for k, v in de_tables_dict.items():
         v['transcript_id'] = k
         tables.append(v)
+
     pd.concat(tables).rename({'log2FC': 'log2FoldChange', 
                             'Cancer Average': 'Cancer Mean', 
                             'GTEx Average': 'GTEx Mean'}, axis=1).to_sql('transcript_de', sqlite3.connect(CACHE_DIR / 'xena.db'))
