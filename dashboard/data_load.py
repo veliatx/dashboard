@@ -48,14 +48,32 @@ def load_sorf_df_conformed():
     df['MS_evidence'] = df.apply(lambda x: True if x.vtx_id in ms_vtx else False, axis=1)
     df['MS or Riboseq'] = df.apply(lambda x: True if x.vtx_id in support_vtx else False, axis=1)
 
-    tblastn_columns = ['vtx_id', 'tblastn_hit_id', 'tblastn_description', 'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length', 
-                       'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']
-    tblastn_df = pd.read_csv(DATA_DIR / 'interim_phase1to8_all_20231012.csv')
+    df.drop(columns=['swissprot_isoform', 
+                     'ensembl_isoform', 
+                     'refseq_isoform'], inplace=True)
+
+    swissprot_isoform_df = pd.read_csv('../cache/protein_data/swissprot_isoform.csv', index_col=0)
+    ensembl_isoform_df = pd.read_csv('../cache/protein_data/ensembl_isoform.csv', index_col=0)
+    refseq_isoform_df = pd.read_csv('../cache/protein_data/refseq_isoform.csv', index_col=0)
+
+    df = df.merge(swissprot_isoform_df[['swissprot_isoform']], how='left', left_index=True, right_index=True)
+    df = df.merge(ensembl_isoform_df[['ensembl_isoform']], how='left', left_index=True, right_index=True)
+    df = df.merge(refseq_isoform_df[['refseq_isoform']], how='left', left_index=True, right_index=True)
+    df.replace(pd.NA, 'None', inplace=True)
+     
+    tblastn_df = pd.read_csv('../cache/protein_data/tblastn.csv')
     tblastn_df.set_index('vtx_id', inplace=True)
     df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
-                           'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
-                           'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)
-    
+                              'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
+                              'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
+    df.drop('phylocsf_vals', axis=1, inplace=True)
+
+    from dashboard.tabs.riboseq_atlas import get_average_coverage
+    ribo_df = get_average_coverage()
+    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
+    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
+    df['Ribo-Seq RPKM Support'] = array_to_add
+
     df.index.name = 'vtx_id'
     df['vtx_id'] = df.index
 

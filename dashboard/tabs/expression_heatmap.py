@@ -22,7 +22,7 @@ def tcga_page(sorf_df):
         with col2:
             values = st.slider(
                 'Select Tissue Specificity Tau',
-                0.0, 1.0, (.8, 1.0),
+                0.0, 1.0, (.98, 1.0),
                 help='Higher values of [Tau](https://academic.oup.com/bib/article/18/2/205/2562739) indicate tissue specific expression of a given sORF')
             tissue_specific_vtx_ids = list(xena_tau_df[xena_tau_df['tau'].between(*values)].index)
 

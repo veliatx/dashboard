@@ -23,22 +23,15 @@ def sorf_details(sorf_df):
     st.title('sORF Table')
     st.write('Table contains library of secreted sORFs.')
     
-    view_cols = list(sorf_df.columns)
-    view_cols.remove('phylocsf_vals')
+    #view_cols = list(sorf_df.columns)
+    #view_cols.remove('phylocsf_vals')
     df = sorf_df.copy()
-    df.drop('phylocsf_vals', axis=1, inplace=True)
-
-    from dashboard.tabs.riboseq_atlas import get_average_coverage
-    ribo_df = get_average_coverage()
-    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
-    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
-    df['Ribo-Seq RPKM Support'] = array_to_add
 
     filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs',
                                                                       'Secreted and on Transcript(s)', 
                                                                       'All Secreted sORFs',
                                                                       'Translated and on Transcript(s)', 
-                                                                      'All Translated sORFs'), index = 1)
+                                                                      'All Translated sORFs'), index = 0)
     exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
     if filter_option == 'Translated and on Transcript(s)':
         df = df[df['translated'] & exist_on_transcript]
@@ -91,18 +84,21 @@ def sorf_details(sorf_df):
 
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
-    # Load data
-    
-    xena_metadata, xena_transcript_ids = load_xena_metadata()
-    autoimmune_metadata = load_autoimmune_atlas()
-    esmfold = load_esmfold()
-    blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
-    # kibby = load_kibby_results(sorf_df)
-    protein_features_df = load_protein_feature_string_representations()
-    phylocsf_dataframe = load_phylocsf_data()
-    xena_overlap = []
+
 
     if 'curr_vtx_id' in st.session_state.keys():
+
+        # Load data
+    
+        xena_metadata, xena_transcript_ids = load_xena_metadata()
+        autoimmune_metadata = load_autoimmune_atlas()
+        esmfold = load_esmfold()
+        blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
+        #kibby = load_kibby_results(sorf_df)
+        protein_features_df = load_protein_feature_string_representations()
+        phylocsf_dataframe = load_phylocsf_data()
+        xena_overlap = []
+
 
         vtx_id = st.session_state['curr_vtx_id']
         selected_row = df[df['vtx_id'] == st.session_state['curr_vtx_id']]
