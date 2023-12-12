@@ -1,79 +1,148 @@
-from tqdm import tqdm
-
-from sorf_query import *
-from transcript_features import *
-from amino_acid_features import *
+"""Script to update the dashboard cache"""
+from sorf_query import parallel_sorf_query, load_jsonlines_table, fix_missing_phase_ids
 from dashboard.etl.sorf_query import parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold, load_mouse_blastp_results
-import sqlite3
+
+from veliadb import base
+from veliadb.base import Protein, ProteinXref, Orf
+
+from Bio import SeqIO
+from io import BytesIO
+from pathlib import Path
 from sqlalchemy import create_engine, text
-import numpy as np
+from tqdm import tqdm
 
-import pandas as pd
-import sys
 import multiprocessing as mp
-import subprocess
-import shlex
-import json
-import pickle
-import os
+import numpy as np
+import pandas as pd
 
-from dashboard.etl import CACHE_DIR, PROTEIN_TOOLS_PATH
+import boto3
+import gzip
+import click
+import json
+import logging
+import pickle
+import time
+import shlex
+import shutil
+import subprocess
+import sqlite3
+import sys
 
 NCPU = 32
-pd.options.display.max_columns = 100
-pd.options.display.max_rows = 100
-pd.options.display.max_colwidth = 200
 
-if __name__ == '__main__':
-    import boto3
-    import gzip
-    from io import BytesIO
-    from Bio import SeqIO
 
-    # Initialize a boto3 client for S3
+def configure_logger(log_file=None, level=logging.INFO, overwrite_log=True,
+                     format=logging.BASIC_FORMAT):
+    """
+    Helper to configure logging output.
+
+    log_file: str
+        Name of logfile
+    level: str
+        Density of log output
+    overwrite_log: bool
+        Flag to overwrite existing log
+    format: str
+        Type of logging output
+    """
+
+    if log_file is None:
+        logging.basicConfig(stream=sys.stdout, level=level, format=format)
+    else:
+        logging.basicConfig(filename=log_file, level=level,
+                            filemode=('w' if overwrite_log else 'a'),
+                            format=format)
+        console = logging.StreamHandler()
+        console.setLevel(level)
+        console.setFormatter(logging.Formatter(format))
+        logging.getLogger('').addHandler(console)
+
+
+def get_genome_reference(bucket_name, s3_file_key):
+    """
+    Helper function to retrieve genome reference
+
+    bucket_name: str
+        Valid Velia S3 bucket name
+    """    
     s3_client = boto3.client('s3')
-    # S3 Bucket and file details
+
+    file_obj = s3_client.get_object(Bucket=bucket_name, Key=s3_file_key)
+    fasta_gzipped = file_obj['Body'].read()
+    with gzip.open(BytesIO(fasta_gzipped), 'rt') as f:
+        genome_reference = SeqIO.to_dict(SeqIO.parse(f, "fasta"))
+
+    return genome_reference
+
+
+@click.command()
+@click.argument('vtx_ids_file', type=click.Path(exists=True))
+@click.argument('cache_dir', type=click.Path(exists=True))
+@click.argument('data_dir', type=click.Path(exists=True))
+@click.argument('protein_tools_path', type=click.Path(exists=True))
+@click.option("--overwrite", is_flag=True, show_default=True, 
+              default=False, help="Whether to overwrite existing cache directory")
+def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite):
+    """
+    Primary function to update cache
+
+    vtx_ids_file: pathlib.Path
+        Path to file containing a single VTX entry per line
+    cache_dir: pathlib.Path
+        Path to directory to write output
+    data_dir: pathlib.Path
+        Path to directory with data folder for dashboard
+    overwrite: bool
+        Flag to indicate whether or not to overwrite existing results
+    """
+    configure_logger(f"{time.strftime('%Y%m%d_%H%M%S')}_veliadb_load_db.log",
+                     level=logging.INFO)
+
+    cache_dir = cache_dir.abspath()
+
     bucket_name = 'velia-annotation-dev'
     s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
-    # Get the file object from S3
-    file_obj = s3_client.get_object(Bucket=bucket_name, Key=s3_file_key)
-    # Read the file content
-    fasta_gzipped = file_obj['Body'].read()
-    # Decompress the file
-    with gzip.open(BytesIO(fasta_gzipped), 'rt') as f:
-        # Parse the FASTA file
-        genome_reference = SeqIO.to_dict(SeqIO.parse(f, "fasta"))
-    # OUTPUT_DIR = '../../cache_update'
-    # CACHE_DIR = OUTPUT_DIR
-    OUTPUT_DIR = CACHE_DIR
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    os.makedirs(os.path.join(OUTPUT_DIR, 'protein_data'), exist_ok=True) 
-    input_file = sys.argv[1]
-    with open(input_file) as fhandle:
+    genome_reference = get_genome_reference(bucket_name, s3_file_key)
+
+    if cache_dir.exists() and not overwrite:
+        logging.info(f'Cache directory {cache_dir} exists and overwrite is set to false')
+        return
+    elif cache_dir.exists() and overwrite:
+        shutil.rmtree(cache_dir)
+        cache_dir.mkdir()
+        cache_dir.joinpath('protein_data').mkdir()
+    elif not cache_dir.exists():
+        cache_dir.mkdir()
+        cache_dir.joinpath('protein_data').mkdir()
+
+    with open(vtx_ids_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
+    
     # Query DB
-    session = base.Session() # connect to db
+    session = base.Session() 
     orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
     missing_orfs = set(ids) - set([i.id for i in orfs])
     def pfunc(i):
         r = parallel_sorf_query(i, genome_reference)
         return r
     if len(missing_orfs) > 0:
-        print('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
-    with open(os.path.join(OUTPUT_DIR, 'sorf_table.jsonlines'), 'w') as fopen:
+        logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
+    with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
         with mp.Pool(NCPU) as ppool:
             for r in tqdm(ppool.imap(pfunc, ids), total=len(ids)):
                 fopen.write(json.dumps(r))
                 fopen.write('\n')
-            
-    sorf_df = load_jsonlines_table(os.path.join(OUTPUT_DIR, 'sorf_table.jsonlines'), index_col='vtx_id')
-    # Format table to conform to standardized entries
+    session.close()
+
+    sorf_df = load_jsonlines_table(cache_dir.joinpath('sorf_table.jsonlines'), index_col='vtx_id')
+    
     del genome_reference
+
+    # Format table to conform to standardized entries
     session = base.Session()
     sorf_df['index_copy'] = sorf_df.index
-
     sorf_df['show_details'] = False
     sorf_df['orf_xrefs'] = sorf_df.apply(lambda x: tuple(x.orf_xrefs.split(';')), axis=1)
     sorf_df['source'] = sorf_df.apply(lambda x: tuple(x.source.split(';')), axis=1)
@@ -90,7 +159,7 @@ if __name__ == '__main__':
                                         .join(Protein, Protein.id == ProteinXref.protein_id)\
                                         .filter(Protein.aa_seq == row.aa).all()]))
 
-    print('parsing sorf_phase')
+    logging.info('parsing sorf_phase')
     phase_ids, phase_entries = parse_sorf_phase(sorf_df, session)
     sorf_df['screening_phase_id'] = phase_ids
     sorf_df['screening_phase'] = phase_entries
@@ -110,21 +179,21 @@ if __name__ == '__main__':
     session.close()
     
     # Munge sorf_df into format consistent with historical app.
-    with open(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
+    with open(cache_dir.joinpath('protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_df.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
-    # python_executable = '/home/ubuntu//envs/protein_tools/bin/python'
-    cmd = f"python {PROTEIN_TOOLS_PATH} -i {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data', 'protein_tools_input.fasta'))} -o {os.path.abspath(os.path.join(OUTPUT_DIR, 'protein_data'))}"
-    print(cmd)
+
+    cmd = f"python {protein_tools_path} -i {cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')} -o {cache_dir.joinpath('protein_data')}"
+    logging.info(f'Running protein tools {cmd}')
     subprocess.run(shlex.split(cmd))
     # Massage table to standard format
-    _, blastp_table = load_mouse_blastp_results(CACHE_DIR = OUTPUT_DIR)
+    _, blastp_table = load_mouse_blastp_results(cache_dir)
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    protein_scores = pd.read_csv(os.path.join(OUTPUT_DIR, 'protein_data', 'sequence_features_scores.csv'), index_col=0)
+    protein_scores = pd.read_csv(cache_dir.joinpath('protein_data', 'sequence_features_scores.csv'), index_col=0)
 
     sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
                     left_index=True, right_index=True, how='left')
-    protein_strings = pd.read_csv(os.path.join(OUTPUT_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0)
+    protein_strings = pd.read_csv(cache_dir.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
     protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
     sorf_df = sorf_df.merge(protein_cutsite,
                     left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
@@ -138,18 +207,18 @@ if __name__ == '__main__':
             'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
             'phylocsf_vals']], left_index=True, right_index=True, how='left')
 
-    with open(DATA_DIR / 'all_secreted_phase1to7.txt', 'r') as f:
+    with open(data_dir.joinpath('all_secreted_phase1to7.txt'), 'r') as f:
         secreted_ids = [i.strip() for i in f.readlines()]
 
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
     sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
-    # add esmfold data
+    
+    logging.info(f'Adding ESMFold data')
     esmfold = load_esmfold()
     sorf_df['ESMFold plddt 90th percentile'] = [np.percentile(esmfold[s.replace('*', '')]['plddt'], 90) if s.replace('*', '') in esmfold else -1 for s in sorf_df['aa'].values]
-    sorf_df.to_parquet(os.path.join(OUTPUT_DIR, 'sorf_df.parq'))
-    # Done formatting
+    sorf_df.to_parquet(cache_dir.joinpath('sorf_df.parq'))
     
-    # Start ETL expression data
+    logging.info(f'Start ETL expression data')
     transcripts_to_map = np.concatenate([*sorf_df['transcripts_exact']])
     transcripts_to_map = [str(i).split('.')[0] for i in transcripts_to_map]
     xena, metadata, tissue_pairs = load_xena_transcripts_with_metadata_from_s3(transcripts_to_map)
@@ -161,16 +230,16 @@ if __name__ == '__main__':
         for t in n.index:
             rows.append([t, cancer, g['GTEx Tissue'], g['TCGA Cancer'], n.loc[t], c.loc[t]])
     
-    tissue_pairs.to_parquet(os.path.join(OUTPUT_DIR, 'gtex_tcga_pairs.parq'))
-    xena.to_parquet(os.path.join(OUTPUT_DIR, 'xena.parq'))
+    tissue_pairs.to_parquet(cache_dir.joinpath('gtex_tcga_pairs.parq'))
+    xena.to_parquet(cache_dir.joinpath('xena.parq'))
     de_genes = read_tcga_de_from_s3('velia-analyses-dev',
-                     'VAP_20230329_tcga_differential_expression', output_dir = OUTPUT_DIR)
+                     'VAP_20230329_tcga_differential_expression', output_dir = cache_dir)
     
     xena_expression = xena[xena.columns[6:]]
     xena_metadata = metadata
     
+    logging.info(f'Sum expression over each VTX')
     all_transcripts = [i for i in transcripts_to_map if i.startswith('ENST')]
-    # Sum expression over each VTX            
     xena_vtx_sums = xena_expression.T.copy()
     xena_vtx_sums = xena_vtx_sums.loc[xena_vtx_sums.index.intersection(all_transcripts)]
     xena_exact_vtx_sums = {}
@@ -180,11 +249,12 @@ if __name__ == '__main__':
         intersection_transcripts = transcripts_in_xena.intersection(transcripts_parsed)
         if len(intersection_transcripts) > 0:
             xena_exact_vtx_sums[vtx_id] = xena_expression[intersection_transcripts].sum(axis=1)
+    
     xena_exact_vtx_sums = pd.DataFrame(xena_exact_vtx_sums)
     xena_exact_heatmap_data = process_sums_dataframe_to_heatmap(xena_exact_vtx_sums, xena_metadata)
-    xena_metadata.to_parquet(os.path.join(OUTPUT_DIR, 'xena_metadata.parq'))
-    xena_expression.to_parquet(os.path.join(OUTPUT_DIR, 'xena_app.parq'))
-    pickle.dump(xena_exact_heatmap_data, open(os.path.join(OUTPUT_DIR, 'xena_exact_heatmap.pkl'), 'wb'))
+    xena_metadata.to_parquet(cache_dir.joinpath('xena_metadata.parq'))
+    xena_expression.to_parquet(cache_dir.joinpath('xena_app.parq'))
+    pickle.dump(xena_exact_heatmap_data, open(cache_dir.joinpath('xena_exact_heatmap.pkl'), 'wb'))
     de_tables_dict, de_metadata = load_de_results(all_transcripts)
     de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
     tables = []
@@ -194,15 +264,15 @@ if __name__ == '__main__':
 
     pd.concat(tables).rename({'log2FC': 'log2FoldChange', 
                             'Cancer Average': 'Cancer Mean', 
-                            'GTEx Average': 'GTEx Mean'}, axis=1).to_sql('transcript_de', sqlite3.connect(CACHE_DIR / 'xena.db'))
+                            'GTEx Average': 'GTEx Mean'}, axis=1).to_sql('transcript_de', sqlite3.connect(cache_dir.joinpath('xena.db')))
 
-    engine = create_engine(f"sqlite:///{CACHE_DIR / 'xena.db'}", future=True)
+    engine = create_engine(f"sqlite:///{cache_dir.joinpath('xena.db')}", future=True)
     with engine.connect() as conn:
         conn.execute(text(f"CREATE INDEX idx_transcript_id_de ON transcript_de (transcript_id);"))
         conn.commit()
-    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(CACHE_DIR / 'xena.db'), index=False)
-    pickle.dump(de_tables_dict, open(os.path.join(OUTPUT_DIR, 'xena_de_tables_dict.pkl'), 'wb'))
-    de_metadata.to_parquet(os.path.join(OUTPUT_DIR, 'xena_de_metadata.parq'))
+    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(cache_dir.joinpath('xena.db'), index=False))
+    pickle.dump(de_tables_dict, open(cache_dir.joinpath('xena_de_tables_dict.pkl'), 'wb'))
+    de_metadata.to_parquet(cache_dir.joinpath('xena_de_metadata.parq'))
     
     
 
