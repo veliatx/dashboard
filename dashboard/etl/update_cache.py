@@ -21,12 +21,10 @@ import os
 
 from dashboard.etl import CACHE_DIR, PROTEIN_TOOLS_PATH
 
-NCPU = 16
+NCPU = 32
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
-
-# seq_records now contains your data as a dictionary of SeqRecord objects
 
 if __name__ == '__main__':
     import boto3

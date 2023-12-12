@@ -21,28 +21,49 @@ import sqlite3
 
 def sorf_details(sorf_df):
     st.title('sORF Table')
-    st.write('Table contains library of secreted sORFs.')
     
-    #view_cols = list(sorf_df.columns)
-    #view_cols.remove('phylocsf_vals')
-    df = sorf_df.copy()
+    view_cols = list(sorf_df.columns)
+    view_cols = [col for col in view_cols if col not in ['transcript_xrefs', 'nucl']]
+    df = sorf_df[view_cols].copy()
 
-    filter_option = st.selectbox('Filter sORFs (secreted default):', ('All sORFs',
-                                                                      'Secreted and on Transcript(s)', 
-                                                                      'All Secreted sORFs',
-                                                                      'Translated and on Transcript(s)', 
-                                                                      'All Translated sORFs'), index = 0)
+    filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
+                                                         'Secreted',
+                                                         'Secreted - Conserved',
+                                                         'Secreted - Novel - Conserved',
+                                                         'Translated',
+                                                         'Translated - Conserved',
+                                                         'All sORFs'), index = 0)
+    
+    signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
+    conservation_cols = ['tblastn_align_identity', 'blastp_align_identity']
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
+    conservation_threshold = 70
     exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
-    if filter_option == 'Translated and on Transcript(s)':
-        df = df[df['translated'] & exist_on_transcript]
+    
+    if filter_option == 'Ribo-Seq sORFs':
+        df = df[df['Ribo-Seq sORF']]
+
+    elif filter_option == 'Secreted':
+        df = df[(df['Ribo-Seq sORF']) & (df[signal_cols] > -1).any(axis=1)]
+
+    elif filter_option == 'Secreted & Conserved':
+        df = df[(df[signal_cols] > -1).any(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
+    elif filter_option == 'Secreted & Conserved & Novel':
+        df = df[(df[signal_cols] > -1).any(axis=1) & \
+               ~(df[isoform_cols]).any(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
+    elif filter_option ==  'Translated':
+        df = df[(df[signal_cols] < 0).all(axis=1)]
+
+    elif filter_option ==  'Translated & Conserved':
+        df = df[(df[signal_cols] < 0).all(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
     elif filter_option == 'All sORFs':
         pass
-    elif filter_option == 'Secreted and on Transcript(s)':
-        df = df[df['secreted'] & exist_on_transcript]
-    elif filter_option == 'All Secreted sORFs':
-        df = df[df['secreted']]
-    elif filter_option ==  'All Translated sORFs':
-        df = df[df['translated']]
 
     df = filter_dataframe(df, f'explorer_filter')
 
@@ -84,12 +105,9 @@ def sorf_details(sorf_df):
 
     st.session_state['data_editor_prev'] = st.session_state['data_editor'].copy()
 
-
-
     if 'curr_vtx_id' in st.session_state.keys():
 
         # Load data
-    
         xena_metadata, xena_transcript_ids = load_xena_metadata()
         autoimmune_metadata = load_autoimmune_atlas()
         esmfold = load_esmfold()
@@ -105,7 +123,7 @@ def sorf_details(sorf_df):
 
         st.divider()
         st.header('sORF Details')
-        st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs']])
+        st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'aa', 'transcripts_exact']])
 
         selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']
         
@@ -149,13 +167,13 @@ def sorf_details(sorf_df):
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
                 if echart_option_ai:
-                    value_ai = st_echarts(echart_option_ai, 
-                                       height="900px", 
-                                       events=events_ai, 
+                    value_ai = st_echarts(echart_option_ai,
+                                       height="900px",
+                                       events=events_ai,
                                        renderer='svg',
                                        )
                 else:
-                    st.write('No transcripts in Velia AI found containing this sORF')
+                    st.write('No transcripts in Velia Autoimmune Atlas found containing this sORF')
 
             with col2:
 
