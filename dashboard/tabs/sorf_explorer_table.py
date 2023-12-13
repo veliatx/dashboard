@@ -7,65 +7,27 @@ import streamlit as st
 import streamlit.components.v1 as components
 import streamlit_scrollable_textbox as stx
 
-from streamlit_plotly_events import plotly_events
 from streamlit_echarts import st_echarts
-from scipy.cluster.hierarchy import linkage, leaves_list
 
-from dashboard import plotting, description
-from dashboard.util import filter_dataframe, convert_df, query_de_transcripts
-from dashboard.data_load import *
-from dashboard.etl import CACHE_DIR, DATA_DIR
+from dashboard import plotting, description, data_load, util
+from dashboard.etl import DATA_DIR
 
-import random
 import sqlite3
 
 def sorf_details(sorf_df):
     st.title('sORF Table')
     
-    view_cols = list(sorf_df.columns)
-    view_cols = [col for col in view_cols if col not in ['transcript_xrefs', 'nucl']]
-    df = sorf_df[view_cols].copy()
-
     filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
-                                                         'Secreted',
-                                                         'Secreted - Conserved',
-                                                         'Secreted - Novel - Conserved',
-                                                         'Translated',
-                                                         'Translated - Conserved',
-                                                         'All sORFs'), index = 0)
+                                                        'Secreted',
+                                                        'Secreted - Conserved',
+                                                        'Secreted - Novel - Conserved',
+                                                        'Translated',
+                                                        'Translated - Conserved',
+                                                        'All sORFs'), index = 0, key='sorf_detail_filter')
     
-    signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
-    conservation_cols = ['tblastn_align_identity', 'blastp_align_identity']
-    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
-    conservation_threshold = 70
-    exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
-    
-    if filter_option == 'Ribo-Seq sORFs':
-        df = df[df['Ribo-Seq sORF']]
+    df = util.filter_dataframe_preset(sorf_df, filter_option)
 
-    elif filter_option == 'Secreted':
-        df = df[(df['Ribo-Seq sORF']) & (df[signal_cols] > -1).any(axis=1)]
-
-    elif filter_option == 'Secreted & Conserved':
-        df = df[(df[signal_cols] > -1).any(axis=1) & \
-                (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
-    elif filter_option == 'Secreted & Conserved & Novel':
-        df = df[(df[signal_cols] > -1).any(axis=1) & \
-               ~(df[isoform_cols]).any(axis=1) & \
-                (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
-    elif filter_option ==  'Translated':
-        df = df[(df[signal_cols] < 0).all(axis=1)]
-
-    elif filter_option ==  'Translated & Conserved':
-        df = df[(df[signal_cols] < 0).all(axis=1) & \
-                (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
-    elif filter_option == 'All sORFs':
-        pass
-
-    df = filter_dataframe(df, f'explorer_filter')
+    df = util.filter_dataframe_dynamic(df, f'explorer_filter')
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
@@ -82,7 +44,7 @@ def sorf_details(sorf_df):
             st.session_state['curr_vtx_id'] = str(df.loc[row_idx_name]['vtx_id'])
 
     st.write(f'{df.shape[0]} sORF entries')
-    # df['transcripts_exact'] = df['transcripts_exact'].astype('str')
+
     update_df = st.data_editor(
         df,
         column_config={
@@ -94,11 +56,10 @@ def sorf_details(sorf_df):
         key='data_editor',
         hide_index=True
     )
-    # df['transcripts_exact'] = df['transcripts_exact'].apply(eval)
 
     st.download_button(
         label="Download as CSV",
-        data=convert_df(update_df),
+        data=util.convert_df(update_df),
         file_name='sorf_selection.csv',
         mime='text/csv',
     )
@@ -108,13 +69,12 @@ def sorf_details(sorf_df):
     if 'curr_vtx_id' in st.session_state.keys():
 
         # Load data
-        xena_metadata, xena_transcript_ids = load_xena_metadata()
-        autoimmune_metadata = load_autoimmune_atlas()
-        esmfold = load_esmfold()
-        blastp_mouse_hits, blastp_data_for_sorf_table = load_mouse_blastp_results()
-        #kibby = load_kibby_results(sorf_df)
-        protein_features_df = load_protein_feature_string_representations()
-        phylocsf_dataframe = load_phylocsf_data()
+        xena_metadata, xena_transcript_ids = data_load.load_xena_metadata()
+        autoimmune_metadata = data_load.load_autoimmune_atlas()
+        esmfold = data_load.load_esmfold()
+        blastp_mouse_hits, blastp_data_for_sorf_table = data_load.load_mouse_blastp_results()
+        protein_features_df = data_load.load_protein_feature_string_representations()
+        phylocsf_dataframe = data_load.load_phylocsf_data()
         xena_overlap = []
 
 
@@ -128,7 +88,7 @@ def sorf_details(sorf_df):
         selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']
         
         xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
-        # autoimmune_overlap = selected_transcripts
+
         value = None
         with st.expander("Transcription Data", expanded=True):
             col1, col2 = st.columns(2)
@@ -136,7 +96,7 @@ def sorf_details(sorf_df):
             with col1:
                 title = f'TCGA/GTEx Transcript Specific Expression - {vtx_id}'
                 selected_expression_tcga = pd.read_parquet('../cache/xena_app.parq', columns=xena_overlap)
-                selected_expression_tcga_ave = selected_expression_tcga.groupby(xena_metadata['dashboard_group']).mean()
+                selected_expression_tcga_ave = selected_expression_tcga.groupby(xena_metadata['dashboard_group']).median()
                 echart_option_tcga, events_tcga = plotting.expression_heatmap_plot(title, 
                                                                                    selected_expression_tcga_ave,
                                                                                    list(xena_overlap))
@@ -146,7 +106,7 @@ def sorf_details(sorf_df):
                                        height="900px", 
                                        events=events_tcga, 
                                        renderer='svg',
-                                    #    key = 'tcga_echart_heatmap_explorer'
+                                       key = 'tcga_echart_heatmap_explorer'
                                        )
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
@@ -160,7 +120,7 @@ def sorf_details(sorf_df):
                 selected_expression_ai_ave = selected_expression_ai.pivot_table(index='group',
                                                                         columns='transcript_id',
                                                                         values='tpm', 
-                                                                        aggfunc=np.nanmean).fillna(0.01).apply(lambda x: np.log2(x+1))
+                                                                        aggfunc=np.nanmedian).fillna(0.01)#.apply(lambda x: np.log2(x+1))
                 sample_sizes = selected_expression_ai['group'].value_counts()
                 selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
                 echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
@@ -171,6 +131,7 @@ def sorf_details(sorf_df):
                                        height="900px",
                                        events=events_ai,
                                        renderer='svg',
+                                       key = 'ai_echart_heatmap_explorer'
                                        )
                 else:
                     st.write('No transcripts in Velia Autoimmune Atlas found containing this sORF')
@@ -182,65 +143,66 @@ def sorf_details(sorf_df):
                         selected_transcript_tcga = value_tcga
                     else:
                         selected_transcript_tcga = list(xena_overlap)[0]
-                    # print(value, selected_transcript, selected_transcripts)
+
                     chart_title = f'Differential Expression - {selected_transcript_tcga}'
                     de_exact_echarts_options_b = plotting.bar_plot_expression_groups_tcga(selected_transcript_tcga.split('.')[0], 
                                                                                             'TCGA', ['GTEx Mean', 'Cancer Mean'],
                                                                                             chart_title)                                     
                     st_echarts(options=de_exact_echarts_options_b, key='b', height='900px', width = '600px', renderer='svg')
+                
                 st.title('')
                 if len(selected_transcripts) > 0:
                     if value_ai:
                         selected_transcript_ai = value_ai
                     else:
                         selected_transcript_ai = selected_transcripts[0]
-                    db_address = DATA_DIR / 'autoimmune_expression_atlas_v1.db'
-                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(query_de_transcripts(selected_transcript_ai, db_address).fillna(0.01),
+                    db_address = DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')
+                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(util.query_de_transcripts(selected_transcript_ai, db_address).fillna(0.01),
                                                                                  f'Autoimmune DE - {selected_transcript_ai}',
                                                                                  db_address)
                     st_echarts(options=option_ai_de, key='c', height='900px', width = '650px', renderer='svg')
                     
-            if (len(xena_overlap)>0) and value_tcga:
+            if (len(xena_overlap) > 0) and value_tcga:
                 st.write(value_tcga)
                 xena_vtx_exp_df = xena_metadata.merge(selected_expression_tcga, left_index=True, right_index=True)
                 fig_tcga = plotting.expression_vtx_boxplot(selected_transcript_tcga.split('.')[0], xena_vtx_exp_df)
                 st.plotly_chart(fig_tcga, use_container_width=True)
                 
-            if (len(selected_transcripts)>0) and value_ai:    
+            if (len(selected_transcripts) > 0) and value_ai:    
                 fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
                     x='group', points = 'all',
                     y=selected_transcript_ai, height=500,
                     width=800 
                 )
                 st.plotly_chart(fig_ai, use_container_width=True)
-                
-                
-                
+
+
         with st.expander("Protein Structure and Function", expanded=True):
             col3, col4 = st.columns(2)
-
-            with col3:
-
+            try:
                 # Load esmfold data for selected sORF
                 sorf_aa_seq = sorf_df[sorf_df['vtx_id']==vtx_id]['aa'].iloc[0]
                 if sorf_aa_seq[-1] == '*':
                     sorf_aa_seq = sorf_aa_seq[:-1]
-
                 plddt = esmfold[sorf_aa_seq]['plddt']
-                # Plot plDDT, Phylocsf, and kibby
-                achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, esmfold)
-                col3.altair_chart(achart, use_container_width=False)
-                        
-            with col4:
                 structure = esmfold[sorf_aa_seq]['pdb']
-                modified_structure_colors = plotting.color_protein_terminal_ends(sorf_aa_seq, structure)
-                view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
-                view.addModel(modified_structure_colors, 'pdb')
-                view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
-                view.zoomTo()
-                st.header('sORF ESMfold', help="Red - Low Confidence  \nBlue - High Confidence  \nConfidence is based on plDDT score from ESMFold  \nN-term is blue and C-term is red")
-                components.html(view._make_html(), height=500, width=600)
-                
+
+                with col3:
+                    # Plot plDDT and Phylocsf
+                    achart = plotting.plot_sequence_line_plots_altair(vtx_id, sorf_aa_seq, phylocsf_dataframe, esmfold)
+                    col3.altair_chart(achart, use_container_width=False)
+                            
+                with col4:
+                    modified_structure_colors = plotting.color_protein_terminal_ends(sorf_aa_seq, structure)
+                    view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
+                    view.addModel(modified_structure_colors, 'pdb')
+                    view.setStyle({'cartoon': {'colorscheme': {'prop':'b','gradient': 'roygb','min':50,'max':90}}})
+                    view.zoomTo()
+                    st.header('sORF ESMfold', help="Red - Low Confidence  \nBlue - High Confidence  \nConfidence is based on plDDT score from ESMFold  \nN-term is blue and C-term is red")
+                    components.html(view._make_html(), height=500, width=600)
+            except:
+                print('No structure and function for this AA')
+
             f = protein_features_df[vtx_id]
             imdf = plotting.format_protein_feature_strings_for_altair_heatmap(f)
             altair_signal_features_fig = plotting.altair_protein_features_plot(imdf)

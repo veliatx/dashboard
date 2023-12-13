@@ -1,22 +1,14 @@
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import streamlit.components.v1 as components
-import streamlit_scrollable_textbox as stx
 
-
+from dashboard import util
+from dashboard.etl import DATA_DIR
+from collections import defaultdict
 from streamlit_plotly_events import plotly_events
 
-from streamlit_echarts import st_echarts
-from scipy.cluster.hierarchy import linkage, leaves_list
-
-from dashboard import plotting, description
-from dashboard.etl import CACHE_DIR, DATA_DIR
-from collections import defaultdict
-
-import random
 import sqlite3
+
 
 def dataframe_with_selections(df):
     df_with_selections = df.copy()
@@ -31,22 +23,36 @@ def dataframe_with_selections(df):
     selected_rows = edited_df[edited_df["Select"]]
     return selected_rows.drop("Select", axis=1)
 
+
 def plot_gene_volcano(plot_gene_df):
     """
     """
     fig = px.scatter(plot_gene_df, x='log2FoldChange', y='log10_padj', opacity=0.5,
-                    color="Significant", color_discrete_map={True: "blue", False: "red"},
+                     color="Significant", color_discrete_map={True: "blue", False: "red"},
                      size_max=10, template='plotly_white',
-                    # labels={"logFC": "Log2(FoldChange)"},
-                    hover_data=['transcript_id', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
+                     labels={"log2FoldChange": "Log2(FoldChange)"},
+                     hover_data=['transcript_id', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
 
     fig.update_layout(legend_font=dict(size=18))
     fig.update_yaxes(autorange="reversed")
 
     return fig
 
+
 def de_page(sorf_df):
-    db_address = DATA_DIR / "autoimmune_expression_atlas_v1.db"
+
+    filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
+                                                         'Secreted',
+                                                         'Secreted - Conserved',
+                                                         'Secreted - Novel - Conserved',
+                                                         'Translated',
+                                                         'Translated - Conserved',
+                                                         'All sORFs'), index = 0, key='de_explorer_filter')
+    
+    
+    sorf_df = util.filter_dataframe_preset(sorf_df, filter_option)
+
+    db_address = DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')
     transcript_to_vtx_map = defaultdict(list)
     for ix, row in sorf_df.iterrows():
         for t in row['transcripts_exact']:
@@ -55,9 +61,8 @@ def de_page(sorf_df):
     with sqlite3.connect(db_address) as sqliteConnection:
         available_studies = pd.read_sql("SELECT DISTINCT velia_study, contrast FROM transcript_de", sqliteConnection)
     
-    filter_option = st.selectbox('Transcripts to Show:', ('All Transcripts',
-                                                                    'sORF Transcripts Only'
-                                                                    ), index = 1, key='de_selectbox')
+    filter_option = st.selectbox('Transcripts to Show:', ('All Transcripts', 'sORF Transcripts Only'),
+                                  index = 1, key='de_selectbox')
     
     selection = dataframe_with_selections(available_studies)
      # Filter the dataframe using the temporary column, then drop the column

@@ -2,14 +2,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-from streamlit_plotly_events import plotly_events
-
-from streamlit_echarts import st_echarts
-from scipy.cluster.hierarchy import linkage, leaves_list
-
-from dashboard.util import filter_dataframe, convert_list_string, convert_df
-from dashboard.etl.sorf_query import load_jsonlines_table
-from dashboard.data_load import *
+from dashboard.data_load import load_sorf_df_conformed
 import dashboard.tabs.riboseq_atlas
 import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.expression_heatmap
@@ -37,11 +30,11 @@ def main():
         #"sORF Transcriptome Atlas (TCGA)": dashboard.tabs.expression_heatmap.tcga_page,
         "sORF Genome Browser": genome_browser,
         "sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page,
-        #"DE Explorer": dashboard.tabs.de_explorer.de_page
+        "DE Explorer": dashboard.tabs.de_explorer.de_page
     }
     sorf_df = load_sorf_df_conformed()
     #tab1, tab2, tab3, tab4, tab5 = st.tabs(list(pages.keys()))
-    tab1, tab2, tab3 = st.tabs(list(pages.keys()))
+    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
 
     with tab1:
         dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df)
@@ -55,8 +48,8 @@ def main():
     with tab3:
         dashboard.tabs.riboseq_atlas.page()
     
-    #with tab4:
-    #   dashboard.tabs.de_explorer.de_page(sorf_df)
+    with tab4:
+       dashboard.tabs.de_explorer.de_page(sorf_df)
     
     # with tab5:
         # dashboard.tabs.sorf_prioritization.page(sorf_df)
@@ -68,6 +61,6 @@ if __name__ == "__main__":
     if "count" not in st.session_state:
         st.session_state["count"] = 0
     if "job_names" not in st.session_state:
-        st.session_state["job_names"] = tabs.riboseq_atlas.get_job_names_on_s3()
+        st.session_state["job_names"] = dashboard.tabs.riboseq_atlas.get_job_names_on_s3()
         
     main()

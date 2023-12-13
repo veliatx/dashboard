@@ -10,8 +10,10 @@ import pandas as pd
 import streamlit as st
 import sqlite3
 
+
 def strip_ensembl_versions(transcript_ids):
     return [i.split('.')[0] if i.startswith('ENST') else i for i in transcript_ids]
+
 
 def query_de_transcripts(transcript_id, 
                       db_address, 
@@ -28,6 +30,7 @@ def query_de_transcripts(transcript_id,
     """.format(transcript_id, log10padj_threshold, minimum_expression)
     return pd.read_sql(query, con)
 
+
 def query_transcript_tpms(transcript_id_list, 
                           db_address):
     con = sqlite3.connect(db_address)
@@ -42,7 +45,7 @@ def convert_df(df):
     return df.to_csv().encode('utf-8')
 
 
-def filter_dataframe(df: pd.DataFrame, key='details') -> pd.DataFrame:
+def filter_dataframe_dynamic(df: pd.DataFrame, key='details') -> pd.DataFrame:
     """
     Adds a UI on top of a dataframe to let viewers filter columns
 
@@ -130,3 +133,55 @@ def ucsc_link(chrom, start, end):
 def convert_list_string(x):
     l = list(map(float, x.strip('][').split(',')))
     return l
+
+
+def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
+    """
+    Filter sORF dataframe based on preset categories
+
+    Args:
+        sorf_df: pd.DataFrame
+            Original dataframe
+        filter_option: str
+            Key to specify preset filtering strategy
+
+    Returns:
+        pd.DataFrame: Filtered dataframe
+    """
+
+    view_cols = list(sorf_df.columns)
+    view_cols = [col for col in view_cols if col not in ['transcript_xrefs', 'nucl']]
+    df = sorf_df[view_cols].copy()
+    
+    signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
+    conservation_cols = ['tblastn_align_identity', 'blastp_align_identity']
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
+    conservation_threshold = 70
+    exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
+    
+    if filter_option == 'Ribo-Seq sORFs':
+        df = df[df['Ribo-Seq sORF']]
+
+    elif filter_option == 'Secreted':
+        df = df[(df['Ribo-Seq sORF']) & (df[signal_cols] > -1).any(axis=1)]
+
+    elif filter_option == 'Secreted & Conserved':
+        df = df[(df[signal_cols] > -1).any(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
+    elif filter_option == 'Secreted & Conserved & Novel':
+        df = df[(df[signal_cols] > -1).any(axis=1) & \
+               ~(df[isoform_cols]).any(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
+    elif filter_option ==  'Translated':
+        df = df[(df[signal_cols] < 0).all(axis=1)]
+
+    elif filter_option ==  'Translated & Conserved':
+        df = df[(df[signal_cols] < 0).all(axis=1) & \
+                (df[conservation_cols] > conservation_threshold).any(axis=1)]
+
+    elif filter_option == 'All sORFs':
+        pass
+
+    return df

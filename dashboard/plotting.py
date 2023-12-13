@@ -4,13 +4,13 @@ import pandas as pd
 import plotly.express as px
 import seaborn as sns
 import simplejson as json
-import streamlit as st
 
 from scipy.cluster.hierarchy import linkage, leaves_list
 from streamlit_echarts import JsCode
 from dashboard.util import query_de_transcripts, query_transcript_tpms, strip_ensembl_versions
-from dashboard.etl import DATA_DIR, CACHE_DIR
+from dashboard.etl import CACHE_DIR
 import sqlite3
+
 
 def color_protein_terminal_ends(aa_seq, pdb_string):
     """
@@ -124,6 +124,7 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
 
     return option
 
+
 def bar_plot_expression_group_autoimmune(df, title, db_path):
     """
     """
@@ -190,7 +191,6 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
 
     return option
 
-    
 
 def expression_heatmap_plot(title, selected_expression, median_groups=False):
     """
@@ -238,7 +238,7 @@ def heatmap_plot(data, row_names, col_names, title, x_axis_interval = 0, y_axis_
     option = {
         "title": {"text": title},
         "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Log2(TPM+1): ' + params.data[2];}").js_code,
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
         },
         "xAxis": {
             "type": "category", 

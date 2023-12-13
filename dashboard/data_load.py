@@ -1,25 +1,17 @@
 import json
 import jsonlines
-import os
 import pickle
-import gzip
 
 import pandas as pd
 import streamlit as st
 
 from collections import defaultdict
-from streamlit_plotly_events import plotly_events
 
-from streamlit_echarts import st_echarts
-from scipy.cluster.hierarchy import linkage, leaves_list
-
-from dashboard.util import filter_dataframe, convert_list_string
-from dashboard.etl.sorf_query import load_jsonlines_table
+from dashboard.util import convert_list_string
 from dashboard.etl import CACHE_DIR, DATA_DIR
-from dashboard import tabs
 
 import pyarrow.parquet as pq
-from dashboard.etl import CACHE_DIR, TPM_DESEQ2_FACTOR, DATA_DIR
+from dashboard.etl import CACHE_DIR, DATA_DIR
 
 
 @st.cache_data()
@@ -35,15 +27,15 @@ def load_autoimmune_atlas():
 def load_sorf_df_conformed():
     """
     """
-    df = pd.read_parquet(os.path.join(CACHE_DIR, 'sorf_df.parq'))
+    df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
     
     #df = df[df['aa_length'] <= 150].copy()
 
     # TODO remove this as temp addition
     ribo_df = pd.read_excel(DATA_DIR.joinpath('Secreted_mP_Riboseq_SAF.xlsx'))
     ribo_vtx = set(ribo_df[ribo_df['manual_check'] == 1]['vtx_id'])
-    ccle_df = pd.read_excel(DATA_DIR / 'SummaryIdentification_CCLE_strongerConfidence.xlsx', index_col=0)
-    gtex_df = pd.read_excel(DATA_DIR / 'SummaryIdentification_GTEX_strongerConfidence.xlsx', index_col=0)
+    ccle_df = pd.read_excel(DATA_DIR.joinpath('SummaryIdentification_CCLE_strongerConfidence.xlsx'), index_col=0)
+    gtex_df = pd.read_excel(DATA_DIR.joinpath('SummaryIdentification_GTEX_strongerConfidence.xlsx'), index_col=0)
 
     ccle_vtx = set(ccle_df['vtx_id'])
     gtex_vtx = set(gtex_df['vtx_id'])
@@ -105,6 +97,37 @@ def load_sorf_df_conformed():
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['screening_phase'] == 'Not Screened') |
         (df['orf_xrefs'].astype(str).str.contains('RibORF')))
+    
+
+    ribo_df = df[df['Ribo-Seq sORF']].copy()
+    x = ribo_df.groupby('aa').aggregate(list)
+
+    vtx_to_keep = []
+
+    for i, row in x.iterrows():
+        vtx_id = ''
+        
+        if len(row['vtx_id']) > 1:
+                        
+            for j, phase in enumerate(row['screening_phase']):
+                if 'phase' in phase.lower():
+                    vtx_id = row['vtx_id'][j]
+                    
+            if vtx_id == '':
+                vtx_id = row['vtx_id'][0]
+        else:
+            vtx_id = row['vtx_id'][0]
+            
+        vtx_to_keep.append(vtx_id)
+        
+    ribo_df = ribo_df[ribo_df['vtx_id'].isin(vtx_to_keep)].copy()
+
+    ribo_aa = set(ribo_df['aa'])
+
+    non_ribo_df = df[~df['Ribo-Seq sORF']].copy()
+    non_ribo_df = non_ribo_df[~non_ribo_df['aa'].isin(ribo_aa)]
+
+    df = pd.concat([ribo_df, non_ribo_df])
 
     return df
 
@@ -113,7 +136,7 @@ def load_sorf_df_conformed():
 def load_protein_feature_string_representations():
     """
     """
-    df = pd.read_csv(os.path.join(CACHE_DIR, 'protein_data', 'sequence_features_strings.csv'), index_col=0).T
+    df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0).T
     return df
 
 
@@ -121,7 +144,7 @@ def load_protein_feature_string_representations():
 def load_xena_transcripts(transcripts):
     """
     """
-    xena_expression = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_app.parq'), columns = transcripts)    
+    xena_expression = pd.read_parquet(CACHE_DIR.joinpath('xena_app.parq'), columns = transcripts)
     return xena_expression
 
 
@@ -129,16 +152,16 @@ def load_xena_transcripts(transcripts):
 def load_xena_metadata():
     """
     """
-    xena_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'xena_metadata.parq'))
+    xena_metadata = pd.read_parquet(CACHE_DIR.joinpath('xena_metadata.parq'))
     xena_metadata['dashboard_group'] = list(map(lambda x: '-'.join(map(str, x)), xena_metadata[['_primary_site', '_study']].values))
-    parq_metadata = pq.read_metadata(os.path.join(CACHE_DIR, 'xena_app.parq'))
+    parq_metadata = pq.read_metadata(CACHE_DIR.joinpath('xena_app.parq'))
     xena_transcripts = set(parq_metadata.schema.names)
     return xena_metadata, xena_transcripts
 
 
 @st.cache_data()
 def load_xena_heatmap_data():
-    xena_exact_heatmap_data = pickle.load(open(os.path.join(CACHE_DIR, 'xena_exact_heatmap.pkl'), 'rb'))
+    xena_exact_heatmap_data = pickle.load(CACHE_DIR.joinpath('xena_exact_heatmap.pkl'), 'rb')
     return xena_exact_heatmap_data
 
 
@@ -147,7 +170,7 @@ def load_esmfold():
     """
     """
     esmfold = {}
-    with open(CACHE_DIR / 'protein_data' / 'esmfold.jsonlines') as fopen:
+    with open(CACHE_DIR.joinpath('protein_data', 'esmfold.jsonlines')) as fopen:
         j_reader = jsonlines.Reader(fopen)
         for l in j_reader:
             esmfold[l['sequence']] = l
@@ -155,12 +178,12 @@ def load_esmfold():
 
 
 @st.cache_data()
-def load_mouse_blastp_results(CACHE_DIR = '../cache'):
+def load_mouse_blastp_results(CACHE_DIR=CACHE_DIR):
     """
     """
     hits_per_query = defaultdict(list)
     sorf_table_data = {}
-    with open(os.path.join(CACHE_DIR, 'protein_data', 'blastp.results.json'), 'r') as fopen:
+    with open(CACHE_DIR.joinpath('protein_data', 'blastp.results.json'), 'r') as fopen:
         blastp = json.load(fopen)
         blastp = blastp['BlastOutput2']
     for entry in blastp:
@@ -201,7 +224,7 @@ def load_mouse_blastp_results(CACHE_DIR = '../cache'):
 def load_phylocsf_data():
     """
     """
-    pcsf = pd.read_csv(DATA_DIR / f"interim_phase1to7_all_phylocsf-vals_20230628.csv", index_col=0)
+    pcsf = pd.read_csv(DATA_DIR.joinpath(f"interim_phase1to7_all_phylocsf-vals_20230628.csv"), index_col=0)
     pcsf['phylocsf_vals'] = pcsf['phylocsf_vals'].apply(convert_list_string)
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]

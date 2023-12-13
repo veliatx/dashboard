@@ -4,13 +4,13 @@ from streamlit_echarts import st_echarts
 from scipy.cluster.hierarchy import linkage, leaves_list
 
 from dashboard import plotting
-from dashboard.util import filter_dataframe, convert_list_string, convert_df
+from dashboard.util import filter_dataframe_dynamic, convert_list_string, convert_df
 from dashboard.data_load import *
 
 def tcga_page(sorf_df):
     st.title("sORF Transcriptome Atlas (TCGA)")
 
-    df = filter_dataframe(sorf_df, 'tcga_transcriptome')
+    df = filter_dataframe_dynamic(sorf_df, 'tcga_transcriptome')
 
     st.write(f'{df.shape[0]} sORF entries')
 
