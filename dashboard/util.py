@@ -16,27 +16,28 @@ def strip_ensembl_versions(transcript_ids):
 
 
 def query_de_transcripts(transcript_id, 
-                      db_address, 
+                      db_address,
                       log10padj_threshold = -2, 
                       minimum_expression = 2):
     # if isinstance(transcripts, str):
     #     transcripts = [transcripts]
     con = sqlite3.connect(db_address)
-    query = """SELECT *
+    query = f"""SELECT *
     FROM transcript_de
-    WHERE transcript_de.transcript_id = '{0}'
-    AND transcript_de.log10_padj <= {1}
-    AND (transcript_de.case_mean >= {2} OR transcript_de.control_mean >= {2})
-    """.format(transcript_id, log10padj_threshold, minimum_expression)
+    WHERE transcript_de.transcript_id = '{transcript_id}'
+    AND transcript_de.log10_padj <= {log10padj_threshold}
+    AND (transcript_de.case_mean >= {minimum_expression} OR transcript_de.control_mean >= {minimum_expression})
+    """
+
     return pd.read_sql(query, con)
 
 
 def query_transcript_tpms(transcript_id_list, 
                           db_address):
     con = sqlite3.connect(db_address)
-    query = """SELECT * FROM transcript_tpm
-                WHERE transcript_tpm.transcript_id IN ({0});
-                """.format(', '.join(transcript_id_list))
+    query = f"""SELECT * FROM transcript_tpm
+                WHERE transcript_tpm.transcript_id IN ({', '.join(transcript_id_list)});
+             """
     return pd.read_sql(query, con)
     
 

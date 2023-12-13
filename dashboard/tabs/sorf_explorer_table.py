@@ -77,7 +77,6 @@ def sorf_details(sorf_df):
         phylocsf_dataframe = data_load.load_phylocsf_data()
         xena_overlap = []
 
-
         vtx_id = st.session_state['curr_vtx_id']
         selected_row = df[df['vtx_id'] == st.session_state['curr_vtx_id']]
 

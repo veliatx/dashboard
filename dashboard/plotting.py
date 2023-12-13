@@ -130,12 +130,14 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
     """
     group_members = ['control_mean', 'case_mean']
     # tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
-    metadata = {k:v for k, v in df[['velia_study', 'contrast']].values}
+    metadata = {k:v for k, v in df[['contrast', 'velia_study']].values}
     option = {
       'title': {'text': title},
       'tooltip': {
           "trigger": 'axis',
           "formatter": JsCode("function (params) {var cols = " + json.dumps(metadata) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
+          "zlevel": 1,
+          "z": 1000
       },
       'legend': {
           'data': group_members,
@@ -158,8 +160,11 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
           'nameLocation': 'middle',
           'nameGap': 90,
           'type': 'category',
-          'data': list(df['velia_study'].values),
-          'axisLabel': { 'interval': 0}#, 'rotate': 90}
+          'data': list(df['contrast'].values),
+          'axisLabel': { 
+            'interval': 0,
+            'overflow': 'breakAll'}#, 'rotate': 90},
+          
         }
       ],
       'xAxis': [

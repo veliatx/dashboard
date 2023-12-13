@@ -26,6 +26,7 @@ def download_file_from_s3(bucket_name, s3_object_key, local_file_path):
     except Exception as e:
         print(f"Error downloading the file: {e}")
 
+
 def update_autoimmune_expression_atlas(transcript_subset = None):
     db_path = '/home/ec2-user/dashboard/repos/data/autoimmune_de.db'
     # Specify your bucket name and object key
