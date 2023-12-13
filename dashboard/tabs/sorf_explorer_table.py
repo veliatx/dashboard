@@ -28,6 +28,7 @@ def sorf_details(sorf_df):
     df = util.filter_dataframe_preset(sorf_df, filter_option)
 
     df = util.filter_dataframe_dynamic(df, f'explorer_filter')
+    df.sort_index(inplace=True)
 
     if 'data_editor_prev' in st.session_state.keys():
         curr_rows = st.session_state['data_editor']['edited_rows']
