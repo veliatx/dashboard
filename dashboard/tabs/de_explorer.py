@@ -43,10 +43,10 @@ def de_page(sorf_df):
 
     filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
                                                          'Secreted',
-                                                         'Secreted - Conserved',
-                                                         'Secreted - Novel - Conserved',
+                                                         'Secreted & Conserved',
+                                                         'Secreted & Conserved & Novel',
                                                          'Translated',
-                                                         'Translated - Conserved',
+                                                         'Translated & Conserved',
                                                          'All sORFs'), index = 0, key='de_explorer_filter')
     
     
@@ -57,26 +57,40 @@ def de_page(sorf_df):
     for ix, row in sorf_df.iterrows():
         for t in row['transcripts_exact']:
             transcript_to_vtx_map[t].append(ix)
-    
+
+    st.caption(f"{sorf_df.shape[0]} ORFs across {len(transcript_to_vtx_map)} transcripts")
+
     with sqlite3.connect(db_address) as sqliteConnection:
-        available_studies = pd.read_sql("SELECT DISTINCT velia_study, contrast FROM transcript_de", sqliteConnection)
+        available_studies_df = pd.read_sql("SELECT DISTINCT velia_study, contrast FROM transcript_de", sqliteConnection)
     
     filter_option = st.selectbox('Transcripts to Show:', ('All Transcripts', 'sORF Transcripts Only'),
                                   index = 1, key='de_selectbox')
     
-    selection = dataframe_with_selections(available_studies)
+
+    available_studies_df.index = available_studies_df.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
+    selection = st.multiselect(
+        'Choose one or more studies', 
+         ['All Studies'] + list(available_studies_df.index))
+    
+    if 'All Studies' in selection:
+        selection_df = available_studies_df
+    else:
+        selection_df = available_studies_df.loc[selection]
+    
+    #selection = dataframe_with_selections(available_studies_df)
      # Filter the dataframe using the temporary column, then drop the column
     # selection = edited_df[edited_df.Select]
     
-    if selection.shape[0]!=0:
-        st.write("Your selection:")
-        st.write(selection)
+    if selection_df.shape[0] > 0:
+        st.caption(f"Your selection: {selection_df.shape[0]} studies")
+        st.dataframe(selection_df)
+        #st.write(selection)
         
         fdr = .5
         tpm_mean = 4
         log2fc = 1
-        contrast = ', '.join([f"'{i}'" for i in selection['contrast'].values])#.iloc[0]
-        velia_study = ', '.join([f"'{i}'" for i in selection['velia_study'].values])
+        contrast = ', '.join([f"'{i}'" for i in selection_df['contrast'].values])#.iloc[0]
+        velia_study = ', '.join([f"'{i}'" for i in selection_df['velia_study'].values])
         
         with sqlite3.connect(db_address) as sqliteConnection:
             sqliteConnection = sqlite3.connect(db_address)
@@ -90,9 +104,22 @@ def de_page(sorf_df):
             """
             gene_de_df = pd.read_sql(query, sqliteConnection)
             gene_de_df['vtx_id'] = [transcript_to_vtx_map[t] if t in transcript_to_vtx_map else 'None' for t in gene_de_df['transcript_id']]
+        
         if filter_option == 'sORF Transcripts Only':
             gene_de_df = gene_de_df[gene_de_df['vtx_id']!='None']
-        st.dataframe(gene_de_df)
+        
+        display_cols = [
+            'velia_study', 'contrast', 'vtx_id', 'transcript_id', 'baseMean',
+            'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
+            'gene_id', 'case_mean', 'control_mean', 
+        ]
+        
+        vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
+        tx_cnt = gene_de_df['transcript_id'].nunique()
+
+        st.caption(f"{vtx_cnt} unique uPs on {tx_cnt} DE transcripts")
+        st.dataframe(gene_de_df[display_cols])
+
         gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
         volcano_fig = plot_gene_volcano(gene_de_df)
         selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)

@@ -28,7 +28,6 @@ def query_de_transcripts(transcript_id,
     AND transcript_de.log10_padj <= {log10padj_threshold}
     AND (transcript_de.case_mean >= {minimum_expression} OR transcript_de.control_mean >= {minimum_expression})
     """
-
     return pd.read_sql(query, con)
 
 
