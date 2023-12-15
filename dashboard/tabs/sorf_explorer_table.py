@@ -19,10 +19,10 @@ def sorf_details(sorf_df):
     
     filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
                                                         'Secreted',
-                                                        'Secreted - Conserved',
-                                                        'Secreted - Novel - Conserved',
+                                                        'Secreted & Conserved',
+                                                        'Secreted & Conserved & Novel',
                                                         'Translated',
-                                                        'Translated - Conserved',
+                                                        'Translated & Conserved',
                                                         'All sORFs'), index = 0, key='sorf_detail_filter')
     
     df = util.filter_dataframe_preset(sorf_df, filter_option)

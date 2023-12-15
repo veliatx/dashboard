@@ -136,8 +136,12 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
       'tooltip': {
           "trigger": 'axis',
           "formatter": JsCode("function (params) {var cols = " + json.dumps(metadata) + "; console.log(params); return params[0].name + ' - ' + cols[params[0].name] + '<br>' + params[0].seriesName + ': ' + params[0].value  + '<br>' + params[1].seriesName + ': ' + params[1].value;}").js_code,
-          "zlevel": 1,
-          "z": 1000
+          "z": 1000,
+          "confine": 'true',
+          "textStyle": {
+            "overflow": 'breakAll',
+            "width": 40,
+          },
       },
       'legend': {
           'data': group_members,

@@ -167,19 +167,23 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
         df = df[(df['Ribo-Seq sORF']) & (df[signal_cols] > -1).any(axis=1)]
 
     elif filter_option == 'Secreted & Conserved':
-        df = df[(df[signal_cols] > -1).any(axis=1) & \
+        df = df[(df['Ribo-Seq sORF']) & \
+                (df[signal_cols] > -1).any(axis=1) & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
     elif filter_option == 'Secreted & Conserved & Novel':
-        df = df[(df[signal_cols] > -1).any(axis=1) & \
+        df = df[(df['Ribo-Seq sORF']) & \
+                (df[signal_cols] > -1).any(axis=1) & \
                ~(df[isoform_cols]).any(axis=1) & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
     elif filter_option ==  'Translated':
-        df = df[(df[signal_cols] < 0).all(axis=1)]
+        df = df[(df['Ribo-Seq sORF']) & \
+                (df[signal_cols] < 0).all(axis=1)]
 
     elif filter_option ==  'Translated & Conserved':
-        df = df[(df[signal_cols] < 0).all(axis=1) & \
+        df = df[(df['Ribo-Seq sORF']) & \
+                (df[signal_cols] < 0).all(axis=1) & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
     elif filter_option == 'All sORFs':

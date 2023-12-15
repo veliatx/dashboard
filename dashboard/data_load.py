@@ -11,6 +11,8 @@ from dashboard.util import convert_list_string
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
 import pyarrow.parquet as pq
+
+from ast import literal_eval
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
 
@@ -128,6 +130,9 @@ def load_sorf_df_conformed():
     non_ribo_df = non_ribo_df[~non_ribo_df['aa'].isin(ribo_aa)]
 
     df = pd.concat([ribo_df, non_ribo_df])
+
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
+    df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
 
     return df
 
