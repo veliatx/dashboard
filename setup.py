@@ -15,5 +15,8 @@ setup(
     ],
     keywords='microproteins',
     packages=find_packages(),
-    install_requires=[]
+    install_requires=[],
+    entry_points = {
+        'console_scripts': ['dashboard_update=dashboard.etl.update_cache:update_cache'],
+    }
 )

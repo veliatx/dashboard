@@ -1,6 +1,5 @@
 """Script to update the dashboard cache"""
-from sorf_query import parallel_sorf_query, load_jsonlines_table, fix_missing_phase_ids
-from dashboard.etl.sorf_query import parse_sorf_phase
+from dashboard.etl.sorf_query import parallel_sorf_query, load_jsonlines_table, fix_missing_phase_ids, parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold, load_mouse_blastp_results
 
@@ -18,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 import boto3
+import functools
 import gzip
 import click
 import json
@@ -77,38 +77,55 @@ def get_genome_reference(bucket_name, s3_file_key):
     return genome_reference
 
 
+def helper_function(arg, extra_arg):
+    return pfunc(arg, extra_arg)
+
+
+def pfunc(i, genome_reference):
+        r = parallel_sorf_query(i, genome_reference)
+        return r
+
 @click.command()
-@click.argument('vtx_ids_file', type=click.Path(exists=True))
-@click.argument('cache_dir', type=click.Path(exists=True))
-@click.argument('data_dir', type=click.Path(exists=True))
-@click.argument('protein_tools_path', type=click.Path(exists=True))
+@click.argument('vtx_ids_file', type=click.Path(exists=True, resolve_path=True))
+@click.argument('cache_dir', type=click.Path(resolve_path=True))
+@click.argument('data_dir', type=click.Path(exists=True, resolve_path=True))
+@click.argument('protein_tools_path', type=click.Path(exists=True, resolve_path=True))
 @click.option("--overwrite", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite existing cache directory")
-def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite):
+@click.option("--resume", is_flag=True, show_default=True, 
+              default=False, help="Whether to attempt a re-run of a partially finished job")
+def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite, resume):
     """
     Primary function to update cache
 
-    vtx_ids_file: pathlib.Path
+    vtx_ids_file:
         Path to file containing a single VTX entry per line
-    cache_dir: pathlib.Path
+    cache_dir:
         Path to directory to write output
-    data_dir: pathlib.Path
+    data_dir:
         Path to directory with data folder for dashboard
-    overwrite: bool
+    protein_tools_path:
+        Path to directory with data folder for dashboard
+    resume:
+        Flag to indicate an attempted re-run of a partial finished job
+    overwrite:
         Flag to indicate whether or not to overwrite existing results
     """
     configure_logger(f"{time.strftime('%Y%m%d_%H%M%S')}_veliadb_load_db.log",
                      level=logging.INFO)
 
-    cache_dir = cache_dir.abspath()
+    cache_dir = Path(cache_dir).absolute()
 
     bucket_name = 'velia-annotation-dev'
     s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
+    logging.info('Loading hg38 genome')
     genome_reference = get_genome_reference(bucket_name, s3_file_key)
 
-    if cache_dir.exists() and not overwrite:
-        logging.info(f'Cache directory {cache_dir} exists and overwrite is set to false')
+    if cache_dir.exists() and not overwrite and not resume:
+        logging.info(f'Cache directory {cache_dir} exists and overwrite and resume are set to false')
         return
+    elif cache_dir.exists() and resume:
+        logging.info(f'Running job from existing cache {cache_dir}')
     elif cache_dir.exists() and overwrite:
         shutil.rmtree(cache_dir)
         cache_dir.mkdir()
@@ -124,16 +141,17 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     session = base.Session() 
     orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
     missing_orfs = set(ids) - set([i.id for i in orfs])
-    def pfunc(i):
-        r = parallel_sorf_query(i, genome_reference)
-        return r
+    
     if len(missing_orfs) > 0:
         logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
     with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
         with mp.Pool(NCPU) as ppool:
-            for r in tqdm(ppool.imap(pfunc, ids), total=len(ids)):
+            func = functools.partial(helper_function, extra_arg=genome_reference)
+
+            for r in tqdm(ppool.imap(func, ids, chunksize=5), total=len(ids)):
                 fopen.write(json.dumps(r))
                 fopen.write('\n')
+
     session.close()
 
     sorf_df = load_jsonlines_table(cache_dir.joinpath('sorf_table.jsonlines'), index_col='vtx_id')
@@ -207,7 +225,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
             'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
             'phylocsf_vals']], left_index=True, right_index=True, how='left')
 
-    with open(data_dir.joinpath('all_secreted_phase1to7.txt'), 'r') as f:
+    with open(Path(data_dir).joinpath('all_secreted_phase1to7.txt'), 'r') as f:
         secreted_ids = [i.strip() for i in f.readlines()]
 
     sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
@@ -270,7 +288,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     with engine.connect() as conn:
         conn.execute(text(f"CREATE INDEX idx_transcript_id_de ON transcript_de (transcript_id);"))
         conn.commit()
-    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(cache_dir.joinpath('xena.db'), index=False))
+    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(cache_dir.joinpath('xena.db')), index=False)
     pickle.dump(de_tables_dict, open(cache_dir.joinpath('xena_de_tables_dict.pkl'), 'wb'))
     de_metadata.to_parquet(cache_dir.joinpath('xena_de_metadata.parq'))
     
