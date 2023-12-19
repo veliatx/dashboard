@@ -195,11 +195,11 @@ def find_seq_substring(query, target_dict):
     else:
         return [k for k, s in target_dict.items() if query.lower() in s]
 
-if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
-    with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
-        with open(os.path.join(current_folder, 'reference.fa'), 'w') as f:
-            for line in tqdm(fhandle.readlines()):
-                f.write(line)
+#if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
+#    with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
+#        with open(os.path.join(current_folder, 'reference.fa'), 'w') as f:
+#            for line in tqdm(fhandle.readlines()):
+#                f.write(line)
 # def query_overlapping_transcripts(o, session):
 #     results = session.query(Transcript).filter(and_(o.start >= Transcript.start, 
 #                                       o.end <= Transcript.end, 

@@ -108,18 +108,14 @@ def load_sorf_df_conformed():
 
     for i, row in x.iterrows():
         vtx_id = ''
-        
         if len(row['vtx_id']) > 1:
-                        
             for j, phase in enumerate(row['screening_phase']):
                 if 'phase' in phase.lower():
                     vtx_id = row['vtx_id'][j]
-                    
             if vtx_id == '':
                 vtx_id = row['vtx_id'][0]
         else:
             vtx_id = row['vtx_id'][0]
-            
         vtx_to_keep.append(vtx_id)
         
     ribo_df = ribo_df[ribo_df['vtx_id'].isin(vtx_to_keep)].copy()

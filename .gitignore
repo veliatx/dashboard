@@ -1,4 +1,9 @@
 data/*
+*.fa
+*.faa
+*.fasta
+*.out
+*.m8
 nohup.out
 dashboard/etl/gencode*
 dashboard/etl/reference*

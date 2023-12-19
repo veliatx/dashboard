@@ -30,7 +30,7 @@ import subprocess
 import sqlite3
 import sys
 
-NCPU = 32
+NCPU = 28
 
 
 def configure_logger(log_file=None, level=logging.INFO, overwrite_log=True,
@@ -93,24 +93,28 @@ def pfunc(i, genome_reference):
 @click.option("--overwrite", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite existing cache directory")
 @click.option("--resume", is_flag=True, show_default=True, 
-              default=False, help="Whether to attempt a re-run of a partially finished job")
-def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite, resume):
+              default=False, help="Whether to overwrite existing cache directory")
+@click.option("--run_protein_tools", is_flag=True, show_default=True, 
+              default=False, help="Whether to overwrite protein_data in the cache directory")
+def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite, resume, run_protein_tools):
     """
     Primary function to update cache
 
-    vtx_ids_file:
-        Path to file containing a single VTX entry per line
-    cache_dir:
-        Path to directory to write output
-    data_dir:
-        Path to directory with data folder for dashboard
-    protein_tools_path:
-        Path to directory with data folder for dashboard
-    resume:
-        Flag to indicate an attempted re-run of a partial finished job
-    overwrite:
-        Flag to indicate whether or not to overwrite existing results
+    vtx_ids_file: Path to file containing a single VTX entry per line
+
+    cache_dir: Path to desired output directory
+    
+    data_dir: Path to directory with data folder for dashboard
+    
+    protein_tools_path: Path to directory with protein_tools repo
+    
+    overwrite: Flag indicating whether to overwrite ALL existing results
+    
+    resume: Flag indicating whether to resume partial run on existing cache dir
+    
+    run_protein_tools: Flag indicating whether to run protein_tools (takes 12hrs+)
     """
+
     configure_logger(f"{time.strftime('%Y%m%d_%H%M%S')}_veliadb_load_db.log",
                      level=logging.INFO)
 
@@ -136,23 +140,23 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
 
     with open(vtx_ids_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
-    
-    # Query DB
-    session = base.Session() 
-    orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
-    missing_orfs = set(ids) - set([i.id for i in orfs])
-    
-    if len(missing_orfs) > 0:
-        logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
-    with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
-        with mp.Pool(NCPU) as ppool:
-            func = functools.partial(helper_function, extra_arg=genome_reference)
 
-            for r in tqdm(ppool.imap(func, ids, chunksize=5), total=len(ids)):
-                fopen.write(json.dumps(r))
-                fopen.write('\n')
+    if overwrite:
+        # Query DB
+        session = base.Session() 
+        orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
+        missing_orfs = set(ids) - set([i.id for i in orfs])
+        
+        if len(missing_orfs) > 0:
+            logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
+        with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
+            with mp.Pool(NCPU) as ppool:
+                func = functools.partial(helper_function, extra_arg=genome_reference)
+                for r in tqdm(ppool.imap(func, ids, chunksize=NCPU), total=len(ids)):
+                    fopen.write(json.dumps(r))
+                    fopen.write('\n')
 
-    session.close()
+        session.close()
 
     sorf_df = load_jsonlines_table(cache_dir.joinpath('sorf_table.jsonlines'), index_col='vtx_id')
     
@@ -185,7 +189,6 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     sorf_df['aa_length'] = sorf_df.apply(lambda x: len(x.aa), axis=1)
 
     sorf_df = fix_missing_phase_ids(sorf_df)
-    # sorf_df = sorf_df[sorf_df['screening_phase'] != '-1']
 
     cols = ['show_details', 'vtx_id', 'aa_length', 'screening_phase_id', 'screening_phase', 'ucsc_track', 
             'source', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',  
@@ -196,14 +199,16 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     sorf_df = sorf_df[cols]
     session.close()
     
-    # Munge sorf_df into format consistent with historical app.
+    # Generate fasta file for protein_tools run
     with open(cache_dir.joinpath('protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
        for ix, row in sorf_df.iterrows():
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
 
-    cmd = f"python {protein_tools_path} -i {cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')} -o {cache_dir.joinpath('protein_data')}"
-    logging.info(f'Running protein tools {cmd}')
-    subprocess.run(shlex.split(cmd))
+    if run_protein_tools:
+        cmd = f"python {protein_tools_path} -i {cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')} -o {cache_dir.joinpath('protein_data')}"
+        logging.info(f'Running protein tools {cmd}')
+        subprocess.run(shlex.split(cmd))
+
     # Massage table to standard format
     _, blastp_table = load_mouse_blastp_results(cache_dir)
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
@@ -288,7 +293,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     with engine.connect() as conn:
         conn.execute(text(f"CREATE INDEX idx_transcript_id_de ON transcript_de (transcript_id);"))
         conn.commit()
-    de_metadata.rename({'TCGA Cancer Type':'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(cache_dir.joinpath('xena.db')), index=False)
+    de_metadata.rename({'TCGA Cancer Type': 'TCGA'}, axis=1).to_sql('sample_metadata_de', sqlite3.connect(cache_dir.joinpath('xena.db')), index=False)
     pickle.dump(de_tables_dict, open(cache_dir.joinpath('xena_de_tables_dict.pkl'), 'wb'))
     de_metadata.to_parquet(cache_dir.joinpath('xena_de_metadata.parq'))
     
