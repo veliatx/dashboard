@@ -24,6 +24,17 @@ def load_autoimmune_atlas():
     meta['dashboard_group'] = meta['atlas_group']
     return meta
 
+@st.cache_data()
+def load_autoimmune_contrasts():
+
+    """
+    Temporary table for joining contrasts from the autoimmune studies to specific samples.
+    To be replaced by table in autoimmune sqlitedb.
+    """
+    contrast_samples = pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+    contrast_samples.index = contrast_samples.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
+    contrast_samples.index.name = 'study -- contrast'
+    return contrast_samples
 
 @st.cache_data()
 def load_sorf_df_conformed():
