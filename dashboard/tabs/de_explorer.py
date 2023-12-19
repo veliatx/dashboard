@@ -4,6 +4,8 @@ import streamlit as st
 
 from dashboard import util
 from dashboard.etl import DATA_DIR
+from dashboard.data_load import load_autoimmune_contrasts
+
 from collections import defaultdict
 from streamlit_plotly_events import plotly_events
 
@@ -63,11 +65,23 @@ def de_page(sorf_df):
     with sqlite3.connect(db_address) as sqliteConnection:
         available_studies_df = pd.read_sql("SELECT DISTINCT velia_study, contrast FROM transcript_de", sqliteConnection)
     
+    study_ex = 'GSE194263'
+    contrast_ex = 'SJOGRENS_SYNDROME_vs_CONTROL'
+    query_str = f'not (velia_study == @study_ex and contrast == @contrast_ex)'
+    available_studies_df = available_studies_df.query(query_str)
+
     filter_option = st.selectbox('Transcripts to Show:', ('All Transcripts', 'sORF Transcripts Only'),
                                   index = 1, key='de_selectbox')
-    
 
     available_studies_df.index = available_studies_df.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
+    
+    contrast_samples = load_autoimmune_contrasts()
+    # contrast_samples = load_autoimmune_contrasts().groupby(['study -- contrast','contrast_side']).agg(','.join)
+    # contrast_samples['samples_left'] = contrast_samples.loc[contrast_samples.index.get_level_values('contrast_side') == 'left']['sample_id']
+    # contrast_samples['samples_right'] = contrast_samples.loc[contrast_samples.index.get_level_values('contrast_side') == 'right']['sample_id']
+    # contrast_samples.reset_index('contrast_side', inplace=True, drop=True)
+    # contrast_samples = contrast_samples[['samples_left','samples_right']].groupby('study -- contrast').agg(sum)
+
     selection = st.multiselect(
         'Choose one or more studies', 
          ['All Studies'] + list(available_studies_df.index))
@@ -77,12 +91,66 @@ def de_page(sorf_df):
     else:
         selection_df = available_studies_df.loc[selection]
     
-    #selection = dataframe_with_selections(available_studies_df)
-     # Filter the dataframe using the temporary column, then drop the column
-    # selection = edited_df[edited_df.Select]
-    
     if selection_df.shape[0] > 0:
         st.caption(f"Your selection: {selection_df.shape[0]} studies")
+
+        with sqlite3.connect(db_address) as sqliteConnection:
+            sample_meta_df = pd.read_sql(
+                                f"""SELECT
+                                        sample_id, 
+                                        sample_condition_1,
+                                        sample_condition_2,
+                                        sample_condition_3,
+                                        sample_type_1,
+                                        sample_type_2
+                                    FROM sample_metadata where velia_study in 
+                                        ({(','.join(selection_df['velia_study'].map(lambda x: "'"+x+"'").unique()))});
+                                """,
+                                sqliteConnection,
+                            )
+            
+        selection_df = selection_df.merge(
+                                        contrast_samples[['sample_id','contrast_side']], 
+                                        left_index=True, 
+                                        right_index=True, 
+                                        how='left',
+                                    )
+        selection_df = selection_df.merge(sample_meta_df, on='sample_id').fillna('')
+
+        # Naming sample_n here just so it gets captured by the below startswith.
+        # Casting to str to accomodate the groupby below.
+
+        selection_df.insert(
+                        1, 
+                        'sample_n',
+                        selection_df.groupby(
+                            ['velia_study', 'contrast', 'contrast_side']
+                            )['sample_id'].transform(len).astype(str),
+                    )
+        selection_df.drop('sample_id', inplace=True, axis=1)
+
+        selection_df = selection_df.groupby(
+                                        ['velia_study', 'contrast', 'contrast_side'],
+                                        ).agg(lambda x: ','.join(x.unique()))
+        
+        for c in selection_df.columns[selection_df.columns.str.startswith('sample')]:
+             selection_df[f'left_{c}'] = selection_df.loc[
+                                                selection_df.index.get_level_values('contrast_side') == 'left'][c]
+             selection_df[f'right_{c}'] = selection_df.loc[
+                                                selection_df.index.get_level_values('contrast_side') == 'right'][c]
+        
+        selection_df.reset_index(inplace=True, drop=False)
+        selection_df.drop(
+                    selection_df.columns[selection_df.columns.str.startswith('sample')].tolist()+['contrast_side'], 
+                    inplace=True, 
+                    axis=1,
+                )
+
+        selection_df.index = selection_df.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
+        selection_df = selection_df.groupby(
+                                    [selection_df.index, 'velia_study', 'contrast']
+                                    ).agg(sum).reset_index(['velia_study','contrast'], drop=False)
+
         st.dataframe(selection_df)
         #st.write(selection)
         
