@@ -3,18 +3,15 @@ import jsonlines
 import pickle
 
 import pandas as pd
+import pyarrow.parquet as pq
 import streamlit as st
-
-from collections import defaultdict
 
 from dashboard.util import convert_list_string
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
-import pyarrow.parquet as pq
-
 from ast import literal_eval
-from dashboard.etl import CACHE_DIR, DATA_DIR
-
+from collections import defaultdict
+from pathlib import Path
 
 @st.cache_data()
 def load_autoimmune_atlas():
@@ -51,15 +48,17 @@ def load_sorf_df_conformed():
     df = add_temp_tblastn_info(df)
 
     df = add_temp_riboseq_info(df)
-
-    df = add_temp_tmhmm_info(df)
     
     df = filter_riboseq(df)
 
+    df = add_temp_feature_info(df)
+
+    df = add_temp_nonsig_cons_info(df)
 
     df = reorder_table_cols(df)
 
     return df
+
 
 def reorder_table_cols(df):
     """
@@ -80,16 +79,67 @@ def reorder_table_cols(df):
         'translated_mean', 'secreted_mean', 'secreted', 'translated', 
         'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
         'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
-        'Ribo-Seq RPKM Support', 'Ribo-Seq sORF']
+        'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
+        'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
+        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity']
     
     return df[view_cols]
 
 
-def add_temp_tmhmm_info(df):
-    """
-    """
+def add_temp_nonsig_cons_info(df):
+    ""
+    ""
+    isoform_data_path = Path('/home/ubuntu/dashboard/scripts/notebooks/isoform_data/')
+    vtx_fasta = isoform_data_path.joinpath('nonsignal_seq_aa.fa')
+
+    header = [
+        'vtx_id', 'blastp_refseq_id', 'nonsig_blastp_hit_id', 'nonsig_blastp_description', 'nonsig_blastp_score',
+        'nonsig_blastp_align_length', 'nonsig_blastp_align_identity', 'nonsig_blastp_gaps', 'nonsig_blastp_evalue']
+
+    blastp_df = pd.read_csv(isoform_data_path.joinpath(f'{vtx_fasta.stem}.blastp.out'), sep='\t', names=header)
+    bdf = blastp_df.sort_values(by='nonsig_blastp_score', ascending=False).groupby('vtx_id').first()
+    
+    df = df.merge(bdf, left_index=True, right_index=True, how='left')
+
+    header = [
+        'vtx_id', 'tblastn_refseq_id', 'nonsig_tblastn_hit_id', 'nonsig_tblastn_description', 'nonsig_tblastn_score',
+        'nonsig_tblastn_align_length', 'nonsig_tblastn_align_identity', 'nonsig_tblastn_gaps', 'nonsig_tblastn_evalue']
+
+    tblastn_df = pd.read_csv(isoform_data_path.joinpath(f'{vtx_fasta.stem}.tblastn.out'), sep='\t', names=header)
+    tdf = tblastn_df.sort_values(by='nonsig_tblastn_score', ascending=False).groupby('vtx_id').first()
+
+    df = df.merge(tdf, left_index=True, right_index=True, how='left')
+
+    return df
 
 
+def add_temp_feature_info(df):
+    """
+    """
+    feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
+
+    signal_cols = ['SignalP 6slow', 'SignalP 4.1', 'SignalP 5b', 'Deepsig']
+    nonsignal_seqs = []
+
+    for i, row in feature_df.iterrows():
+        nonsignal_aa = ''
+        for col in signal_cols:
+            if row[col].startswith('S'):
+                signal_len = row[col].count('S')
+                nonsignal_aa = row['Sequence'][signal_len:-1]
+                break
+        nonsignal_seqs.append(nonsignal_aa)
+
+    feature_df['nonsignal_seqs'] = nonsignal_seqs
+
+    feature_df['DeepTMHMM_prediction'] = feature_df.apply(lambda x: 'M' in x['DeepTMHMM'] or 'B' in x['DeepTMHMM'], axis=1)
+    feature_df['DeepTMHMM_length'] = feature_df.apply(lambda x: x['DeepTMHMM'].count('M'), axis=1)
+
+    feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
+    df = df.merge(feature_df[feature_cols], left_index=True, right_index=True, how='left')
+    
+    df.index.name = 'vtx_id'
+    df['vtx_id'] = df.index
 
     return df
 
@@ -115,8 +165,7 @@ def add_temp_tblastn_info(df):
     tblastn_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'tblastn.csv'))
     tblastn_df.set_index('vtx_id', inplace=True)
     df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
-                              'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
-                              'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
+                              'tblastn_align_length', 'tblastn_align_identity', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
     df.drop('phylocsf_vals', axis=1, inplace=True)
     
     return df

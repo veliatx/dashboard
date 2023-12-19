@@ -31,10 +31,10 @@ def plot_gene_volcano(plot_gene_df):
     """
     fig = px.scatter(plot_gene_df, x='log2FoldChange', y='log10_padj', opacity=0.5,
                      color="Significant", color_discrete_map={True: "blue", False: "red"},
-                     size_max=10, template='plotly_white',
+                     size_max=20, template='plotly_white',
                      labels={"log2FoldChange": "Log2(FoldChange)"},
                      hover_data=['transcript_id', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
-
+    fig.update_traces(marker=dict(size=12))
     fig.update_layout(legend_font=dict(size=18))
     fig.update_yaxes(autorange="reversed")
 
