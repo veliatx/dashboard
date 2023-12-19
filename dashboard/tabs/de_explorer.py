@@ -65,6 +65,11 @@ def de_page(sorf_df):
     with sqlite3.connect(db_address) as sqliteConnection:
         available_studies_df = pd.read_sql("SELECT DISTINCT velia_study, contrast FROM transcript_de", sqliteConnection)
     
+    study_ex = 'GSE194263'
+    contrast_ex = 'SJOGRENS_SYNDROME_vs_CONTROL'
+    query_str = f'not (velia_study == @study_ex and contrast == @contrast_ex)'
+    available_studies_df = available_studies_df.query(query_str)
+
     filter_option = st.selectbox('Transcripts to Show:', ('All Transcripts', 'sORF Transcripts Only'),
                                   index = 1, key='de_selectbox')
 
@@ -85,10 +90,6 @@ def de_page(sorf_df):
         selection_df = available_studies_df
     else:
         selection_df = available_studies_df.loc[selection]
-    
-    #selection = dataframe_with_selections(available_studies_df)
-     # Filter the dataframe using the temporary column, then drop the column
-    # selection = edited_df[edited_df.Select]
     
     if selection_df.shape[0] > 0:
         st.caption(f"Your selection: {selection_df.shape[0]} studies")

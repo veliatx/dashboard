@@ -44,7 +44,80 @@ def load_sorf_df_conformed():
     
     #df = df[df['aa_length'] <= 150].copy()
 
-    # TODO remove this as temp addition
+    df = add_temp_ms_ribo_info(df)
+    
+    df = add_temp_isoform_info(df)
+
+    df = add_temp_tblastn_info(df)
+
+    df = add_temp_riboseq_info(df)
+
+    df = add_temp_tmhmm_info(df)
+    
+    df = filter_riboseq(df)
+
+    return df
+
+def add_temp_tmhmm_info(df):
+    """
+    """
+
+    return df
+
+
+def add_temp_riboseq_info(df):
+    """
+    """
+    from dashboard.tabs.riboseq_atlas import get_average_coverage
+    ribo_df = get_average_coverage()
+    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
+    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
+    df['Ribo-Seq RPKM Support'] = array_to_add
+    
+    df.index.name = 'vtx_id'
+    df['vtx_id'] = df.index
+
+    return df
+
+
+def add_temp_tblastn_info(df):
+    """
+    """
+    tblastn_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'tblastn.csv'))
+    tblastn_df.set_index('vtx_id', inplace=True)
+    df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
+                              'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
+                              'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
+    df.drop('phylocsf_vals', axis=1, inplace=True)
+    
+    return df
+
+
+def add_temp_isoform_info(df):
+    """
+    """
+    df.drop(columns=['swissprot_isoform', 
+                        'ensembl_isoform', 
+                        'refseq_isoform'], inplace=True)
+
+    swissprot_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'swissprot_isoform.csv'), index_col=0)
+    ensembl_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'ensembl_isoform.csv'), index_col=0)
+    refseq_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'refseq_isoform.csv'), index_col=0)
+
+    df = df.merge(swissprot_isoform_df[['swissprot_isoform']], how='left', left_index=True, right_index=True)
+    df = df.merge(ensembl_isoform_df[['ensembl_isoform']], how='left', left_index=True, right_index=True)
+    df = df.merge(refseq_isoform_df[['refseq_isoform']], how='left', left_index=True, right_index=True)
+    df.replace(pd.NA, 'None', inplace=True)
+
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
+    df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
+
+    return df
+
+
+def add_temp_ms_ribo_info(df):
+    """
+    """
     ribo_df = pd.read_excel(DATA_DIR.joinpath('Secreted_mP_Riboseq_SAF.xlsx'))
     ribo_vtx = set(ribo_df[ribo_df['manual_check'] == 1]['vtx_id'])
     ccle_df = pd.read_excel(DATA_DIR.joinpath('SummaryIdentification_CCLE_strongerConfidence.xlsx'), index_col=0)
@@ -60,35 +133,14 @@ def load_sorf_df_conformed():
     df['MS_evidence'] = df.apply(lambda x: True if x.vtx_id in ms_vtx else False, axis=1)
     df['MS or Riboseq'] = df.apply(lambda x: True if x.vtx_id in support_vtx else False, axis=1)
 
-    df.drop(columns=['swissprot_isoform', 
-                     'ensembl_isoform', 
-                     'refseq_isoform'], inplace=True)
+    return df
 
-    swissprot_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'swissprot_isoform.csv'), index_col=0)
-    ensembl_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'ensembl_isoform.csv'), index_col=0)
-    refseq_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'refseq_isoform.csv'), index_col=0)
 
-    df = df.merge(swissprot_isoform_df[['swissprot_isoform']], how='left', left_index=True, right_index=True)
-    df = df.merge(ensembl_isoform_df[['ensembl_isoform']], how='left', left_index=True, right_index=True)
-    df = df.merge(refseq_isoform_df[['refseq_isoform']], how='left', left_index=True, right_index=True)
-    df.replace(pd.NA, 'None', inplace=True)
-     
-    tblastn_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'tblastn.csv'))
-    tblastn_df.set_index('vtx_id', inplace=True)
-    df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
-                              'tblastn_score', 'tblastn_query_coverage', 'tblastn_align_length',
-                              'tblastn_align_identity', 'tblastn_gaps', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
-    df.drop('phylocsf_vals', axis=1, inplace=True)
-
-    from dashboard.tabs.riboseq_atlas import get_average_coverage
-    ribo_df = get_average_coverage()
-    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
-    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
-    df['Ribo-Seq RPKM Support'] = array_to_add
-
-    df.index.name = 'vtx_id'
-    df['vtx_id'] = df.index
-
+def filter_riboseq(df):
+    """
+    Temporary function to enfore ribo-seq filtering
+    for primary entries in collection
+    """
     df['Ribo-Seq sORF'] = (
         (df['source'].apply(lambda x: 'gencode_riboseq' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase1_Bona fide' in x)) | \
@@ -111,7 +163,6 @@ def load_sorf_df_conformed():
         (df['screening_phase'] == 'Not Screened') |
         (df['orf_xrefs'].astype(str).str.contains('RibORF')))
     
-
     ribo_df = df[df['Ribo-Seq sORF']].copy()
     x = ribo_df.groupby('aa').aggregate(list)
 
@@ -141,9 +192,6 @@ def load_sorf_df_conformed():
     non_ribo_df = non_ribo_df[~non_ribo_df['aa'].isin(ribo_aa)]
 
     df = pd.concat([ribo_df, non_ribo_df])
-
-    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
-    df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
 
     return df
 
