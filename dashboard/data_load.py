@@ -56,11 +56,40 @@ def load_sorf_df_conformed():
     
     df = filter_riboseq(df)
 
+
+    df = reorder_table_cols(df)
+
     return df
+
+def reorder_table_cols(df):
+    """
+    """
+    view_cols = [
+        'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
+        'screening_phase_id', 'screening_phase', 'genscript_id',
+        'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs', 
+        'transcripts_exact', 'aa', 'nucl', 'chr', 'strand', 'start', 'end',
+        'chrom_starts', 'block_sizes', 'phases', 
+        'blastp_subject', 'blastp_hit_description',
+        'blastp_align_length', 'blastp_align_identity', 
+        'tblastn_hit_id', 'tblastn_description',
+        'tblastn_align_length', 'tblastn_align_identity', 
+        'Deepsig_score', 'SignalP 6slow_score', 'SignalP 5b_score', 'SignalP 4.1_score', 
+        'Deepsig_cut', 'SignalP 6slow_cut', 'SignalP 5b_cut', 'SignalP 4.1_cut', 
+        'Phobius', 'DeepTMHMM', 
+        'translated_mean', 'secreted_mean', 'secreted', 'translated', 
+        'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
+        'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
+        'Ribo-Seq RPKM Support', 'Ribo-Seq sORF']
+    
+    return df[view_cols]
+
 
 def add_temp_tmhmm_info(df):
     """
     """
+
+
 
     return df
 
@@ -170,14 +199,18 @@ def filter_riboseq(df):
 
     for i, row in x.iterrows():
         vtx_id = ''
+        
         if len(row['vtx_id']) > 1:
+                        
             for j, phase in enumerate(row['screening_phase']):
                 if 'phase' in phase.lower():
                     vtx_id = row['vtx_id'][j]
+                    
             if vtx_id == '':
                 vtx_id = row['vtx_id'][0]
         else:
             vtx_id = row['vtx_id'][0]
+            
         vtx_to_keep.append(vtx_id)
         
     ribo_df = ribo_df[ribo_df['vtx_id'].isin(vtx_to_keep)].copy()
