@@ -154,25 +154,26 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     df = sorf_df[view_cols].copy()
     
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
-    conservation_cols = ['tblastn_align_identity', 'blastp_align_identity']
-    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
+    conservation_cols = ['tblastn_align_identity', 'blastp_align_identity', 'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity']
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform']
     conservation_threshold = 70
     exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
+    measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
     
     if filter_option == 'Ribo-Seq sORFs':
         df = df[df['Ribo-Seq sORF']]
 
     elif filter_option == 'Secreted':
-        df = df[(df['Ribo-Seq sORF']) & (df[signal_cols] > -1).any(axis=1)]
+        df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted]
 
     elif filter_option == 'Secreted & Conserved':
         df = df[(df['Ribo-Seq sORF']) & \
-                (df[signal_cols] > -1).any(axis=1) & \
+                measured_secreted_or_predicted_secreted & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
     elif filter_option == 'Secreted & Conserved & Novel':
         df = df[(df['Ribo-Seq sORF']) & \
-                (df[signal_cols] > -1).any(axis=1) & \
+                measured_secreted_or_predicted_secreted & \
                ~(df[isoform_cols]).any(axis=1) & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 

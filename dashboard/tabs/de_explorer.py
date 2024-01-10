@@ -8,6 +8,11 @@ from dashboard.data_load import load_autoimmune_contrasts
 
 from collections import defaultdict
 from streamlit_plotly_events import plotly_events
+import dashboard.tabs.sorf_explorer_table
+import dashboard.tabs.riboseq_atlas
+import streamlit.components.v1 as components
+
+
 
 import sqlite3
 
@@ -33,7 +38,7 @@ def plot_gene_volcano(plot_gene_df):
                      color="Significant", color_discrete_map={True: "blue", False: "red"},
                      size_max=20, template='plotly_white',
                      labels={"log2FoldChange": "Log2(FoldChange)"},
-                     hover_data=['transcript_id', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
+                     hover_data=['transcript_id', 'hgnc_name', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
     fig.update_traces(marker=dict(size=12))
     fig.update_layout(legend_font=dict(size=18))
     fig.update_yaxes(autorange="reversed")
@@ -53,7 +58,7 @@ def de_page(sorf_df):
     
     
     sorf_df = util.filter_dataframe_preset(sorf_df, filter_option)
-
+    transcript_to_hgnc = pd.read_csv(DATA_DIR / 'veliadb_v1.transcript2hgnc.csv.gz', index_col=0)
     db_address = DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')
     transcript_to_vtx_map = defaultdict(list)
     for ix, row in sorf_df.iterrows():
@@ -115,7 +120,7 @@ def de_page(sorf_df):
                                         right_index=True, 
                                         how='left',
                                     )
-        selection_df = selection_df.merge(sample_meta_df, on='sample_id').fillna('')
+        selection_df = selection_df.merge(sample_meta_df, on='sample_id', how='left').fillna('')
 
         # Naming sample_n here just so it gets captured by the below startswith.
         # Casting to str to accomodate the groupby below.
@@ -189,6 +194,7 @@ def de_page(sorf_df):
         st.dataframe(gene_de_df[display_cols])
 
         gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
+        gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
         volcano_fig = plot_gene_volcano(gene_de_df)
         selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
         # st.plotly_chart(volcano_fig)
@@ -196,13 +202,17 @@ def de_page(sorf_df):
         # st.write(selected_points)
         selected_vtx_ids = []
         for x in selected_points:
-            hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][1]
+            hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][2]
             selected_vtx_ids += hoverdata
             # st.write(hoverdata)
         # st.write(selected_vtx_ids)
         # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
-    
-        st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
+        selected_vtx_ids = list(set(selected_vtx_ids))
+        try:
+            dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids].copy())
+        except Exception as e:
+            print(e)
+            st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
     # dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids])
     
     # st.dataframe(availabe_studies)

@@ -56,7 +56,8 @@ def load_sorf_df_conformed():
     df = add_temp_nonsig_cons_info(df)
 
     df = reorder_table_cols(df)
-
+    df.rename({'secreted': 'secreted_hibit',
+               'translated': 'translated_hibit'}, axis=1, inplace=True)
     return df
 
 
