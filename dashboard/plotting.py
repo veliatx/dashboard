@@ -57,6 +57,7 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
     dataframe = pd.read_sql("SELECT * FROM transcript_de WHERE transcript_de.transcript_id = '{0}'".format(transcript_id.split('.')[0]),
                         sqlite3.connect(CACHE_DIR / 'xena.db'))
     dataframe.rename({'index': 'TCGA'}, axis=1, inplace=True)
+    dataframe.rename({'TCGA Cancer Type': 'TCGA'}, axis=1, inplace=True)
     dataframe['DE'] = (dataframe['padj']<0.0001) & (np.abs(dataframe['log2FoldChange'])>=2) & \
                         (dataframe['Cancer Mean'].gt(4) | dataframe['GTEx Mean'].gt(4)) 
     
@@ -130,6 +131,7 @@ def bar_plot_expression_group_autoimmune(df, title, db_path):
     """
     group_members = ['control_mean', 'case_mean']
     # tcga_code_to_description = de_metadata[['Description', 'GTEx Tissue Type']].apply(lambda x: f"{x[0]}<br>GTEx Normal {x[1]}", axis=1).to_dict()
+    df['contrast'] = [f"{study}_{c}" for study, c in df[['velia_study', 'contrast']].values]
     metadata = {k:v for k, v in df[['contrast', 'velia_study']].values}
     option = {
       'title': {'text': title},

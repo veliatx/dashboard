@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import streamlit as st
 
 from dashboard.util import convert_list_string
-from dashboard.etl import CACHE_DIR, DATA_DIR
+from dashboard.etl import CACHE_DIR, DATA_DIR, NOTEBOOK_DATA_DIR
 
 from ast import literal_eval
 from collections import defaultdict
@@ -90,7 +90,7 @@ def reorder_table_cols(df):
 def add_temp_nonsig_cons_info(df):
     ""
     ""
-    isoform_data_path = Path('/home/ubuntu/dashboard/scripts/notebooks/isoform_data/')
+    isoform_data_path = NOTEBOOK_DATA_DIR.joinpath('isoform_data')
     vtx_fasta = isoform_data_path.joinpath('nonsignal_seq_aa.fa')
 
     header = [
