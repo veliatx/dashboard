@@ -41,19 +41,19 @@ def load_sorf_df_conformed():
     
     #df = df[df['aa_length'] <= 150].copy()
 
-    df = add_temp_ms_ribo_info(df)
+    df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb or something
     
-    df = add_temp_isoform_info(df)
+    df = add_temp_isoform_info(df) # Converted to use ETL format
 
-    df = add_temp_tblastn_info(df)
+    df = add_temp_tblastn_info(df) # Uses ETL Version
 
-    df = add_temp_riboseq_info(df)
+    # df = add_temp_riboseq_info(df) # Moved to update_cache.py
     
-    df = filter_riboseq(df)
+    df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
 
-    df = add_temp_feature_info(df)
+    # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
 
-    df = add_temp_nonsig_cons_info(df)
+    df = add_temp_nonsig_cons_info(df) # generates core output in run_protein_search_tools.py
 
     df = reorder_table_cols(df)
     df.rename({'secreted': 'secreted_hibit',
@@ -90,24 +90,7 @@ def reorder_table_cols(df):
 def add_temp_nonsig_cons_info(df):
     ""
     ""
-    isoform_data_path = NOTEBOOK_DATA_DIR.joinpath('isoform_data')
-    vtx_fasta = isoform_data_path.joinpath('nonsignal_seq_aa.fa')
-
-    header = [
-        'vtx_id', 'blastp_refseq_id', 'nonsig_blastp_hit_id', 'nonsig_blastp_description', 'nonsig_blastp_score',
-        'nonsig_blastp_align_length', 'nonsig_blastp_align_identity', 'nonsig_blastp_gaps', 'nonsig_blastp_evalue']
-
-    blastp_df = pd.read_csv(isoform_data_path.joinpath(f'{vtx_fasta.stem}.blastp.out'), sep='\t', names=header)
-    bdf = blastp_df.sort_values(by='nonsig_blastp_score', ascending=False).groupby('vtx_id').first()
-    
-    df = df.merge(bdf, left_index=True, right_index=True, how='left')
-
-    header = [
-        'vtx_id', 'tblastn_refseq_id', 'nonsig_tblastn_hit_id', 'nonsig_tblastn_description', 'nonsig_tblastn_score',
-        'nonsig_tblastn_align_length', 'nonsig_tblastn_align_identity', 'nonsig_tblastn_gaps', 'nonsig_tblastn_evalue']
-
-    tblastn_df = pd.read_csv(isoform_data_path.joinpath(f'{vtx_fasta.stem}.tblastn.out'), sep='\t', names=header)
-    tdf = tblastn_df.sort_values(by='nonsig_tblastn_score', ascending=False).groupby('vtx_id').first()
+    tdf = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'nonsignal_seq_blast_tblastn.parq'))
 
     df = df.merge(tdf, left_index=True, right_index=True, how='left')
 
@@ -145,19 +128,19 @@ def add_temp_feature_info(df):
     return df
 
 
-def add_temp_riboseq_info(df):
-    """
-    """
-    from dashboard.tabs.riboseq_atlas import get_average_coverage
-    ribo_df = get_average_coverage()
-    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
-    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
-    df['Ribo-Seq RPKM Support'] = array_to_add
+# def add_temp_riboseq_info(df):
+#     """
+#     """
+#     from dashboard.tabs.riboseq_atlas import get_average_coverage
+#     ribo_df = get_average_coverage()
+#     vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
+#     array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
+#     df['Ribo-Seq RPKM Support'] = array_to_add
     
-    df.index.name = 'vtx_id'
-    df['vtx_id'] = df.index
+#     df.index.name = 'vtx_id'
+#     df['vtx_id'] = df.index
 
-    return df
+#     return df
 
 
 def add_temp_tblastn_info(df):
@@ -179,17 +162,11 @@ def add_temp_isoform_info(df):
                         'ensembl_isoform', 
                         'refseq_isoform'], inplace=True)
 
-    swissprot_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'swissprot_isoform.csv'), index_col=0)
-    ensembl_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'ensembl_isoform.csv'), index_col=0)
-    refseq_isoform_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'refseq_isoform.csv'), index_col=0)
-
-    df = df.merge(swissprot_isoform_df[['swissprot_isoform']], how='left', left_index=True, right_index=True)
-    df = df.merge(ensembl_isoform_df[['ensembl_isoform']], how='left', left_index=True, right_index=True)
-    df = df.merge(refseq_isoform_df[['refseq_isoform']], how='left', left_index=True, right_index=True)
-    df.replace(pd.NA, 'None', inplace=True)
+    isoforms = pd.read_parquet(CACHE_DIR.joinpath('isoforms_search.parq'))
 
     isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
-    df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
+    df = df.merge(isoforms, left_index=True, right_index=True, how='left')
+    # df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
 
     return df
 
@@ -217,7 +194,7 @@ def add_temp_ms_ribo_info(df):
 
 def filter_riboseq(df):
     """
-    Temporary function to enfore ribo-seq filtering
+    Temporary function to enforce ribo-seq filtering
     for primary entries in collection
     """
     df['Ribo-Seq sORF'] = (
@@ -309,11 +286,11 @@ def load_xena_heatmap_data():
 
 
 @st.cache_data()
-def load_esmfold():
+def load_esmfold(file_path):
     """
     """
     esmfold = {}
-    with open(CACHE_DIR.joinpath('protein_data', 'esmfold.jsonlines')) as fopen:
+    with open(file_path) as fopen:
         j_reader = jsonlines.Reader(fopen)
         for l in j_reader:
             esmfold[l['sequence']] = l

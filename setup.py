@@ -17,6 +17,7 @@ setup(
     packages=find_packages(),
     install_requires=[],
     entry_points = {
-        'console_scripts': ['dashboard_update=dashboard.etl.update_cache:update_cache'],
+        'console_scripts': ['dashboard_update=dashboard.etl.update_cache:update_cache', 
+                            'run_protein_search_tools=dashboard.etl.run_protein_search_tools:run_protein_search_tools'],
     }
 )
