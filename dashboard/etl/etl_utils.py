@@ -62,3 +62,26 @@ def fasta_write_veliadb_protein_sequences():
         with open(CACHE_DIR.joinpath('protein_data', 'GRCh38_latest_protein.faa'), 'wb') as fwrite:
             for line in fopen.readlines():
                 fwrite.write(line)
+                
+def write_nonsignal_aa_sequences(protein_data_path):
+    feature_df = pd.read_csv(protein_data_path.joinpath('sequence_features_strings.csv'), index_col=0)
+    signal_cols = ['SignalP 6slow', 'SignalP 4.1', 'SignalP 5b', 'Deepsig']
+    nonsignal_seqs = []
+
+    for i, row in feature_df.iterrows():
+        nonsignal_aa = ''
+        for col in signal_cols:
+            if row[col].startswith('S'):
+                signal_len = row[col].count('S')
+                nonsignal_aa = row['Sequence'][signal_len:-1]
+                break
+        nonsignal_seqs.append(nonsignal_aa)
+
+    feature_df['nonsignal_seqs'] = nonsignal_seqs
+
+    feature_df['DeepTMHMM_prediction'] = feature_df.apply(lambda x: 'M' in x['DeepTMHMM'] or 'B' in x['DeepTMHMM'], axis=1)
+    feature_df['DeepTMHMM_length'] = feature_df.apply(lambda x: x['DeepTMHMM'].count('M'), axis=1)
+    feature_df.to_csv(protein_data_path.joinpath('sequence_features_strings.csv'))
+    with open(protein_data_path.joinpath('vtx_aa_seq_signal_sequence_removed.fa'), 'w') as fwrite:
+        for vtx, seq in feature_df['nonsignal_seqs'].items():
+            fwrite.write(f">{vtx}\n{seq}\n")

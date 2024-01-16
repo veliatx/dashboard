@@ -2,7 +2,7 @@
 from dashboard.etl.sorf_query import parallel_sorf_query, load_jsonlines_table, fix_missing_phase_ids, parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold, load_mouse_blastp_results
-from dashboard.etl.etl_utils import fasta_write_veliadb_protein_sequences, merge_sorf_df_blast
+from dashboard.etl.etl_utils import fasta_write_veliadb_protein_sequences, merge_sorf_df_blast, write_nonsignal_aa_sequences
 from dashboard.tabs.riboseq_atlas import get_average_coverage
 from dashboard.etl import module_path
 
@@ -218,6 +218,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
         vtx_aa_fasta_path = cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')
         output_prefix_path = cache_dir.joinpath('protein_data')
         cmd = f"python {protein_tools_path} -i {vtx_aa_fasta_path} -o {output_prefix_path}"
+        write_nonsignal_aa_sequences(output_prefix_path)
         logging.info(f'Running protein feature prediction tools {cmd}')
         subprocess.run(shlex.split(cmd))
         cmd = f"run_protein_search_tools {vtx_aa_fasta_path} {output_prefix_path}"
