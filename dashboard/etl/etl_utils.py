@@ -1,19 +1,23 @@
+import numpy as np
 import pandas as pd
-from dashboard.etl import CACHE_DIR, DATA_DIR
+from dashboard.etl import DATA_DIR
 import pathlib
+from collections import defaultdict
+import json
 
 from veliadb import base
 from veliadb.base import Protein, ProteinXref, Orf, Dataset
 import smart_open
 
-def merge_sorf_df_blast(sorf_df, blastp_table):
+def merge_sorf_df_blast(sorf_df, blastp_table, protein_data_path):
     sorf_df = sorf_df.copy()
     sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    protein_scores = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_scores.csv'), index_col=0)
+    protein_scores = pd.read_csv(protein_data_path.joinpath('sequence_features_scores.csv'), index_col=0)
 
     sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
                     left_index=True, right_index=True, how='left')
-    protein_strings = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
+    protein_strings = pd.read_csv(protein_data_path.joinpath('sequence_features_strings.csv'), index_col=0)
+    protein_strings.drop(['DeepTMHMM_prediction', 'DeepTMHMM_length'], axis=1, inplace=True)
     protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
     sorf_df = sorf_df.merge(protein_cutsite,
                     left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
@@ -35,7 +39,47 @@ def merge_sorf_df_blast(sorf_df, blastp_table):
     sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
     return sorf_df
 
-def fasta_write_veliadb_protein_sequences():
+def parse_blastp_json(file_path):
+    hits_per_query = defaultdict(list)
+    sorf_table_data = {}
+    with open(file_path, 'r') as fopen:
+        blastp = json.load(fopen)
+        if 'BlastOutput2' in blastp:
+            blastp = blastp['BlastOutput2']
+    for entry in blastp:
+        entry = entry['report']['results']
+        q = entry['search']['query_title']
+        hits = entry['search']['hits']
+        if len(hits) == 0:
+            # print('No alignments found with mouse')
+            pass
+        else:
+            for h in hits:
+                ids = []
+                for item in h['description']:
+                    ids.append(item['accession'])
+                alignment = h['hsps']
+                alignment = alignment[0]
+                align_str = '  \n'.join([h['description'][0]['title'], alignment['qseq'], alignment['midline'], alignment['hseq']])
+                alignment['hit_ids'] = ';'.join(ids)
+                alignment['alignment'] = align_str
+                hits_per_query[q].append(alignment)
+                if isinstance(alignment, dict):
+                    best_hit = alignment
+                else:
+                    best_hit = pd.DataFrame(alignment).sort_values('score', ascending=False).iloc[0]
+                best_hit_description = [h for h in hits if h['num'] == best_hit['num']][0]['description'][0]
+                sorf_table_data[q] = {'blastp_score': best_hit['score'],
+                 'blastp_query_coverage': best_hit['align_len']/len(best_hit['qseq']),
+                 'blastp_align_length': best_hit['align_len'],
+                 'blastp_gaps': best_hit['gaps'],
+                 'blastp_align_identity': best_hit['identity']/best_hit['align_len'],
+                'blastp_subject': best_hit_description['id'],
+                'blastp_hit_description': best_hit_description['title']
+                }
+    return hits_per_query, sorf_table_data
+
+def fasta_write_veliadb_protein_sequences(protein_data_path):
     session = base.Session()
     # Additional Protein Features
     swissprot_query = \
@@ -45,13 +89,13 @@ def fasta_write_veliadb_protein_sequences():
            .filter(Dataset.name == 'swissprot')\
            .distinct(ProteinXref.protein_id)
 
-    fasta_file = CACHE_DIR.joinpath('protein_data', 'swissprot_proteins.fa')
+    fasta_file = protein_data_path.joinpath( 'swissprot_proteins.fa')
 
     with open(fasta_file, 'w') as outfile:
         for protein in swissprot_query.all():
             outfile.write(f'>{protein.uniprot_id}\n{protein.aa_seq}\n')
 
-    fasta_file = CACHE_DIR.joinpath('protein_data', 'ensembl_proteins.fa')
+    fasta_file = protein_data_path.joinpath('ensembl_proteins.fa')
 
     with open(fasta_file, 'w') as outfile:
         for protein in session.query(Protein).filter(Protein.ensembl_protein_id.ilike('ENSP%')).all():
@@ -59,7 +103,7 @@ def fasta_write_veliadb_protein_sequences():
     session.close()
     
     with smart_open.smart_open("s3://velia-analyses-dev/VAP_20230327_phase1to6_secreted/data/GRCh38_latest_protein.faa") as fopen:
-        with open(CACHE_DIR.joinpath('protein_data', 'GRCh38_latest_protein.faa'), 'wb') as fwrite:
+        with open(protein_data_path.joinpath('GRCh38_latest_protein.faa'), 'wb') as fwrite:
             for line in fopen.readlines():
                 fwrite.write(line)
                 
@@ -84,4 +128,5 @@ def write_nonsignal_aa_sequences(protein_data_path):
     feature_df.to_csv(protein_data_path.joinpath('sequence_features_strings.csv'))
     with open(protein_data_path.joinpath('vtx_aa_seq_signal_sequence_removed.fa'), 'w') as fwrite:
         for vtx, seq in feature_df['nonsignal_seqs'].items():
-            fwrite.write(f">{vtx}\n{seq}\n")
+            if len(seq)>0:
+                fwrite.write(f">{vtx}\n{seq}\n")

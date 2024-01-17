@@ -4,6 +4,7 @@ data/*
 *.fasta
 *.out
 *.m8
+*veliadb_load_db.log
 nohup.out
 dashboard/etl/gencode*
 dashboard/etl/reference*

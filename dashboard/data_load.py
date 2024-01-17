@@ -5,6 +5,7 @@ import pickle
 import pandas as pd
 import pyarrow.parquet as pq
 import streamlit as st
+import sqlite3
 
 from dashboard.util import convert_list_string
 from dashboard.etl import CACHE_DIR, DATA_DIR, NOTEBOOK_DATA_DIR
@@ -28,9 +29,11 @@ def load_autoimmune_contrasts():
     Temporary table for joining contrasts from the autoimmune studies to specific samples.
     To be replaced by table in autoimmune sqlitedb.
     """
-    contrast_samples = pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+    db = sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db'))
+    contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", db)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
     contrast_samples.index = contrast_samples.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
     contrast_samples.index.name = 'study -- contrast'
+    db.close()
     return contrast_samples
 
 @st.cache_data()
@@ -38,7 +41,7 @@ def load_sorf_df_conformed():
     """
     """
     df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
-    
+    df.drop('nonsignal_seqs', axis=1, inplace=True)
     #df = df[df['aa_length'] <= 150].copy()
 
     df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb or something
@@ -52,7 +55,12 @@ def load_sorf_df_conformed():
     df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
 
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
-
+    feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
+    feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
+    df = df.merge(feature_df[feature_cols], left_index=True, right_index=True, how='left')
+    df.index.name = 'vtx_id'
+    df['vtx_id'] = df.index
+    
     df = add_temp_nonsig_cons_info(df) # generates core output in run_protein_search_tools.py
 
     df = reorder_table_cols(df)
@@ -146,8 +154,7 @@ def add_temp_feature_info(df):
 def add_temp_tblastn_info(df):
     """
     """
-    tblastn_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'tblastn.csv'))
-    tblastn_df.set_index('vtx_id', inplace=True)
+    tblastn_df = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'mouse_tblastn.parq'))
     df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
                               'tblastn_align_length', 'tblastn_align_identity', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
     df.drop('phylocsf_vals', axis=1, inplace=True)
@@ -162,7 +169,7 @@ def add_temp_isoform_info(df):
                         'ensembl_isoform', 
                         'refseq_isoform'], inplace=True)
 
-    isoforms = pd.read_parquet(CACHE_DIR.joinpath('isoforms_search.parq'))
+    isoforms = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'isoforms_search.parq'))
 
     isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
     df = df.merge(isoforms, left_index=True, right_index=True, how='left')
@@ -301,44 +308,9 @@ def load_esmfold(file_path):
 def load_mouse_blastp_results(CACHE_DIR=CACHE_DIR):
     """
     """
-    hits_per_query = defaultdict(list)
-    sorf_table_data = {}
-    with open(CACHE_DIR.joinpath('protein_data', 'blastp.results.json'), 'r') as fopen:
-        blastp = json.load(fopen)
-        blastp = blastp['BlastOutput2']
-    for entry in blastp:
-        entry = entry['report']['results']
-        q = entry['search']['query_title']
-        hits = entry['search']['hits']
-        if len(hits) == 0:
-            # print('No alignments found with mouse')
-            pass
-        else:
-            for h in hits:
-                ids = []
-                for item in h['description']:
-                    ids.append(item['accession'])
-                alignment = h['hsps']
-                alignment = alignment[0]
-                align_str = '  \n'.join([h['description'][0]['title'], alignment['qseq'], alignment['midline'], alignment['hseq']])
-                alignment['hit_ids'] = ';'.join(ids)
-                alignment['alignment'] = align_str
-                hits_per_query[q].append(alignment)
-                if isinstance(alignment, dict):
-                    best_hit = alignment
-                else:
-                    best_hit = pd.DataFrame(alignment).sort_values('score', ascending=False).iloc[0]
-                best_hit_description = [h for h in hits if h['num'] == best_hit['num']][0]['description'][0]
-                sorf_table_data[q] = {'blastp_score': best_hit['score'],
-                 'blastp_query_coverage': best_hit['align_len']/len(best_hit['qseq']),
-                 'blastp_align_length': best_hit['align_len'],
-                 'blastp_gaps': best_hit['gaps'],
-                 'blastp_align_identity': best_hit['identity']/best_hit['align_len'],
-                'blastp_subject': best_hit_description['id'],
-                'blastp_hit_description': best_hit_description['title']
-                }
+    with open(CACHE_DIR.joinpath('protein_data', 'blastp.results.pkl'), 'rb') as fopen:
+        hits_per_query, sorf_table_data = pickle.load(fopen)
     return hits_per_query, sorf_table_data
-
 
 @st.cache_data()
 def load_phylocsf_data():

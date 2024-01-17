@@ -12,12 +12,13 @@ import click
 @click.command()
 @click.argument('input_vtx', type=click.Path(exists=True, resolve_path=True))
 @click.argument('output_prefix', type=click.Path(resolve_path=True))
+@click.option("--number_threads", help="Number of threads to use for parallel computing.", default=8, type=int)
 
 # input_vtx = #pathlib.Path('/home/ec2-user/repos/dashboard/cache/protein_data/protein_tools_input.fasta')
 # CACHE_DIR = pathlib.Path('/home/ec2-user/repos/dashboard/cache')
 # output_prefix = pathlib.Path('/home/ec2-user/repos/dashboard/cache/protein_data')
 
-def run_protein_search_tools(input_vtx, output_prefix):
+def run_protein_search_tools(input_vtx, output_prefix, number_threads):
     input_vtx = pathlib.Path(input_vtx)
     output_prefix = pathlib.Path(output_prefix)
     
@@ -92,7 +93,7 @@ def run_protein_search_tools(input_vtx, output_prefix):
     blast_db_path = pathlib.Path('/efs/databases/blast')
     blast_db = '-db mouse.protein.genbank.faa'
     output_fmt = '6 qaccver saccver stitle bitscore qcovs length pident gaps evalue'
-    options = f'-outfmt "{output_fmt}" -num_threads 8'
+    options = f'-outfmt "{output_fmt}" -num_threads {number_threads}'
     query = f'-query /blast/data/{input_vtx.name}'
     output = f'-out /blast/data/{input_vtx.stem}.blastp.out'
     base_cmd = f'docker run --rm -v {blast_db_path}:/blast/blastdb -v {output_prefix}:/blast/data ncbi/blast'
@@ -110,7 +111,7 @@ def run_protein_search_tools(input_vtx, output_prefix):
     blast_db_path = pathlib.Path('/efs/databases/blast')
     blast_db = '-db mouse.rna.fna'
     output_fmt = '6 qaccver saccver stitle score qcovs length pident gaps evalue'
-    options = f'-outfmt "{output_fmt}" -num_threads 8'
+    options = f'-outfmt "{output_fmt}" -num_threads {number_threads}'
     query = f'-query /blast/data/{input_vtx.name}'
     output = f'-out /blast/data/{input_vtx.stem}.tblastn.out'
     
@@ -126,7 +127,8 @@ def run_protein_search_tools(input_vtx, output_prefix):
     tdf = tblastn_df.sort_values(by='tblastn_score', ascending=False).groupby('vtx_id').first()
     tdf.to_parquet(pathlib.Path(output_prefix).joinpath('mouse_tblastn.parq'))
     
-    subprocess.run(shlex.split(f'docker run  --rm -v {output_prefix}:/data -v /efs/databases/blast:/db ncbi/blast blastp -task blastp-fast -outfmt 15 -db /db/mouse.protein.faa -query /data/{input_vtx.stem} -max_target_seqs 20 -num_threads 8 -out /data/blastp.results.json'))
+    
+    subprocess.run(shlex.split(f'docker run --rm -v {output_prefix}:/data -v /efs/databases/blast:/db ncbi/blast blastp -task blastp-fast -outfmt 15 -db /db/mouse.protein.faa -query /data/{input_vtx.name} -max_target_seqs 20 -num_threads 1 -out /data/blastp.results.json'))
     
     # Merge isoform results
     isoform_df = pd.DataFrame([swissprot_isoform_df['swissprot_isoform'], ensembl_isoform_df['ensembl_isoform'], refseq_isoform_df['refseq_isoform']]).T
@@ -138,7 +140,7 @@ def run_protein_search_tools(input_vtx, output_prefix):
     blast_db_path = pathlib.Path('/efs/databases/blast')
     blast_db = '-db mouse.protein.genbank.faa'
     output_fmt = '6 qaccver saccver stitle bitscore qcovs length pident gaps evalue'
-    options = f'-outfmt "{output_fmt}" -num_threads 8'
+    options = f'-outfmt "{output_fmt}" -num_threads {number_threads}'
     query = f'-query /blast/data/{VTX_WITHOUT_SIGNAL_SEQ.name}'
     output = f'-out /blast/data/{VTX_WITHOUT_SIGNAL_SEQ.stem}.blastp.out'
     base_cmd = f'docker run --rm -v {blast_db_path}:/blast/blastdb -v {output_prefix}:/blast/data ncbi/blast'

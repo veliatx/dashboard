@@ -115,12 +115,12 @@ def process_sums_dataframe_to_heatmap(xena_vtx_sum_df, xena_metadata_df):
 
     return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
 
-def load_de_results(transcripts):
-    cache_filez = os.listdir(CACHE_DIR)
+def load_de_results(cache_directory, transcripts):
+    cache_filez = os.listdir(cache_directory)
     temp_dict = {}
     for f in cache_filez:
         if f.endswith('_de.parq') and not (f=='expression_de.parq'):
-            df = pd.read_parquet(os.path.join(CACHE_DIR, f))
+            df = pd.read_parquet(os.path.join(cache_directory, f))
             df['transcript'] = df.apply(lambda x: x.name.split('.')[0], axis=1)
             df = df[df['transcript'].isin(transcripts)].copy()
             temp_dict[f.split('_')[0]] = df
@@ -132,7 +132,7 @@ def load_de_results(transcripts):
                                          'log2FC': row.log2FoldChange, 'padj': row.padj}
     for t, d in de_tables_dict.items():
         de_tables_dict[t] = pd.DataFrame(d).T
-    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(CACHE_DIR, 'gtex_tcga_pairs.parq'))
+    tcga_gtex_tissue_metadata = pd.read_parquet(os.path.join(cache_directory, 'gtex_tcga_pairs.parq'))
     tcga_gtex_tissue_metadata = tcga_gtex_tissue_metadata.drop_duplicates(['TCGA Cancer Type', 'GTEx Tissue Type']).copy()
     tcga_gtex_tissue_metadata.index = tcga_gtex_tissue_metadata['TCGA Cancer Type']
     return de_tables_dict, tcga_gtex_tissue_metadata
