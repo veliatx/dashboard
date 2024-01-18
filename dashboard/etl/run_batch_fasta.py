@@ -25,14 +25,25 @@ with torch.no_grad():
     with open(OUTPUT, 'w') as fout:
 
         for name, seq in tqdm(sequences.items()):
-            output = model.infer_pdb(str(seq))
-            plddt = model.infer(str(seq))
-            fout.write(json.dumps({'id': name,
-                                   'sequence': seq,
-                                   'pdb': output,
-                                   'mean_plddt': float(plddt['mean_plddt'].detach().cpu().numpy()[0]),
-                                   'ptm': float(plddt['ptm'].detach().cpu().numpy()[0]),
-                                   'plddt': [float(i) for i in plddt['plddt'].detach().cpu().numpy().mean(axis=(0, 2))],
-                                  })
-                      )
-            fout.write('\n')
+            seq = str(seq)
+            try:
+                output = model.infer_pdb(seq)
+                plddt = model.infer(seq)
+                fout.write(json.dumps({'id': name,
+                                    'sequence': seq,
+                                    'pdb': output,
+                                    'mean_plddt': float(plddt['mean_plddt'].detach().cpu().numpy()[0]),
+                                    'ptm': float(plddt['ptm'].detach().cpu().numpy()[0]),
+                                    'plddt': [float(i) for i in plddt['plddt'].detach().cpu().numpy().mean(axis=(0, 2))],
+                                    })
+                        )
+                fout.write('\n')
+            except Exception as e:
+                fout.write(json.dumps({'id': name,
+                                    'sequence': seq,
+                                    'pdb': 'failed',
+                                    'mean_plddt': -1,#float(plddt['mean_plddt'].detach().cpu().numpy()[0]),
+                                    'ptm': -1, #float(plddt['ptm'].detach().cpu().numpy()[0]),
+                                    'plddt': [-1]#[float(i) for i in plddt['plddt'].detach().cpu().numpy().mean(axis=(0, 2))],
+                                    }))
+                print(name, seq, 'failed to infer pdb')

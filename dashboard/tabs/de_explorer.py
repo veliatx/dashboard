@@ -11,6 +11,7 @@ from streamlit_plotly_events import plotly_events
 import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.riboseq_atlas
 import streamlit.components.v1 as components
+import smart_open
 
 
 
@@ -44,6 +45,12 @@ def plot_gene_volcano(plot_gene_df):
     fig.update_yaxes(autorange="reversed")
 
     return fig
+
+def download_qc_report_from_s3(velia_study):
+    file_stem = f"s3://velia-piperuns-dev/expression_atlas/v1/{velia_study}/"
+    with smart_open.smart_open(file_stem, 'r') as fopen:
+        data = fopen.readlines()
+    return data
 
 
 def de_page(sorf_df):
@@ -95,6 +102,8 @@ def de_page(sorf_df):
         selection_df = available_studies_df
     else:
         selection_df = available_studies_df.loc[selection]
+    # for ix, row in selection_df.iterrows():
+    #     st.download_button(row['velia_study'], download_qc_report_from_s3(velia_study), file_name=f"{row['velia_study']}.html")
     
     if selection_df.shape[0] > 0:
         st.caption(f"Your selection: {selection_df.shape[0]} studies")

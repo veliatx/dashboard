@@ -223,6 +223,7 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_orfrater' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
         (df['screening_phase'] == 'Not Screened') |
         (df['orf_xrefs'].astype(str).str.contains('RibORF')))
     
