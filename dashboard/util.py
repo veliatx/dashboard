@@ -165,6 +165,11 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
 
     elif filter_option == 'Secreted':
         df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted]
+    
+    elif filter_option == 'Secreted & Novel':
+        df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted & \
+                (~(df[isoform_cols]).any(axis=1))
+                ]
 
     elif filter_option == 'Secreted & Conserved':
         df = df[(df['Ribo-Seq sORF']) & \
