@@ -8,6 +8,7 @@ import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.expression_heatmap
 import dashboard.tabs.sorf_prioritization
 import dashboard.tabs.de_explorer
+import pathlib
 
 import gzip
 
@@ -23,7 +24,8 @@ def main():
     
     st.set_page_config(layout="wide")
     st.markdown(""" <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """, unsafe_allow_html=True)
-    with open("style.css") as f:
+    app_path = pathlib.Path(__file__.replace('sorf_app.py', ''))
+    with open(app_path.joinpath("style.css")) as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     
     # Define a dictionary with the page names and corresponding functions
