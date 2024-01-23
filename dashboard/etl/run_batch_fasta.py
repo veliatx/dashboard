@@ -46,4 +46,5 @@ with torch.no_grad():
                                     'ptm': -1, #float(plddt['ptm'].detach().cpu().numpy()[0]),
                                     'plddt': [-1]#[float(i) for i in plddt['plddt'].detach().cpu().numpy().mean(axis=(0, 2))],
                                     }))
+                fout.write('\n')
                 print(name, seq, 'failed to infer pdb')
