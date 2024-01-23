@@ -1,6 +1,7 @@
 import json
 import jsonlines
 import pickle
+import numpy as np
 
 import pandas as pd
 import pyarrow.parquet as pq
@@ -59,6 +60,8 @@ def load_sorf_df_conformed():
     feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
     df = df.merge(feature_df[feature_cols], left_index=True, right_index=True, how='left')
     df.index.name = 'vtx_id'
+    isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform']
+    df[isoform_cols] = df[isoform_cols].apply(lambda x: [str(i) if isinstance(i, np.ndarray) else 'None' for i in x], axis=0)
     df['vtx_id'] = df.index
     
     df = add_temp_nonsig_cons_info(df) # generates core output in run_protein_search_tools.py
@@ -66,6 +69,9 @@ def load_sorf_df_conformed():
     df = reorder_table_cols(df)
     df.rename({'secreted': 'secreted_hibit',
                'translated': 'translated_hibit'}, axis=1, inplace=True)
+    
+    df[['start', 'end']] = df[['start', 'end']].astype(int)
+
     return df
 
 
@@ -289,8 +295,18 @@ def load_xena_metadata():
 
 @st.cache_data()
 def load_xena_heatmap_data():
-    xena_exact_heatmap_data = pickle.load(CACHE_DIR.joinpath('xena_exact_heatmap.pkl'), 'rb')
-    return xena_exact_heatmap_data
+    with open(CACHE_DIR.joinpath('xena_exact_heatmap.pkl'), 'rb') as infile:
+        xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = pickle.load(infile)
+
+    non_vtx_cols = [x for x in list(xena_vtx_exp_df.columns) if x[0:3] != 'VTX']
+    vtx_cols = [x for x in list(xena_vtx_exp_df.columns) if x[0:3] == 'VTX']
+
+    index_cols = xena_vtx_exp_df[non_vtx_cols].T.drop_duplicates().T
+    data_cols = xena_vtx_exp_df[vtx_cols]
+
+    xena_vtx_exp_df = index_cols.merge(data_cols, left_index=True, right_index=True)
+
+    return xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df
 
 
 @st.cache_data()

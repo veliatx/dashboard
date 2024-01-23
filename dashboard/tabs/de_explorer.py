@@ -56,13 +56,13 @@ def download_qc_report_from_s3(velia_study):
 def de_page(sorf_df):
 
     filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
-                                                         'Secreted',
-                                                         'Secreted & Conserved',
-                                                         'Secreted & Conserved & Novel',
-                                                         'Translated',
-                                                         'Translated & Conserved',
-                                                         'All sORFs'), index = 0, key='de_explorer_filter')
-    
+                                                        'Secreted',
+                                                        'Secreted & Novel',
+                                                        'Secreted & Conserved',
+                                                        'Secreted & Conserved & Novel',
+                                                        'Translated',
+                                                        'Translated & Conserved',
+                                                        'All sORFs'), index = 0, key='sorf_detail_filter2')
     
     sorf_df = util.filter_dataframe_preset(sorf_df, filter_option)
     transcript_to_hgnc = pd.read_csv(DATA_DIR / 'veliadb_v1.transcript2hgnc.csv.gz', index_col=0)

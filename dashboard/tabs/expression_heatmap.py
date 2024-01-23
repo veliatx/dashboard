@@ -17,7 +17,7 @@ def tcga_page(sorf_df):
     with st.container():
         col1, col2, col3 = st.columns(3)
         with col1:
-                xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap_data()
+            xena_tau_df, xena_vtx_sum_df, xena_vtx_exp_df = load_xena_heatmap_data()
 
         with col2:
             values = st.slider(
@@ -44,6 +44,7 @@ def tcga_page(sorf_df):
         exp_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
         df = df.merge(exp_df.T, left_index=True, right_index=True)
         st.header('Tissue specific sORFs')
+        st.write(df.shape)
         st.dataframe(df)
 
         st.download_button(
