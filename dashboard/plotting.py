@@ -373,6 +373,9 @@ def format_protein_feature_strings_for_altair_heatmap(orf_features):
     """
     """
     # orf_features = orf_string_table.T[vtx_id]
+    string_cols = ['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1', 'Phobius',
+       'DeepTMHMM', 'Sequence']
+    orf_features = orf_features[string_cols]
     orf_features = orf_features.T
     orf_features = orf_features.apply(lambda x: [*x])
     seq = orf_features.pop('Sequence')

@@ -10,7 +10,7 @@ import streamlit_scrollable_textbox as stx
 from streamlit_echarts import st_echarts
 
 from dashboard import plotting, description, data_load, util
-from dashboard.etl import DATA_DIR
+from dashboard.etl import DATA_DIR, CACHE_DIR
 
 import sqlite3
 
@@ -19,6 +19,7 @@ def sorf_details(sorf_df):
     
     filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
                                                         'Secreted',
+                                                        'Secreted & Novel',
                                                         'Secreted & Conserved',
                                                         'Secreted & Conserved & Novel',
                                                         'Translated',
@@ -72,7 +73,7 @@ def sorf_details(sorf_df):
         # Load data
         xena_metadata, xena_transcript_ids = data_load.load_xena_metadata()
         autoimmune_metadata = data_load.load_autoimmune_atlas()
-        esmfold = data_load.load_esmfold()
+        esmfold = data_load.load_esmfold(CACHE_DIR.joinpath('protein_data', 'esmfold.jsonlines'))
         blastp_mouse_hits, blastp_data_for_sorf_table = data_load.load_mouse_blastp_results()
         protein_features_df = data_load.load_protein_feature_string_representations()
         phylocsf_dataframe = data_load.load_phylocsf_data()
@@ -95,7 +96,7 @@ def sorf_details(sorf_df):
 
             with col1:
                 title = f'TCGA/GTEx Transcript Specific Expression - {vtx_id}'
-                selected_expression_tcga = pd.read_parquet('../cache/xena_app.parq', columns=xena_overlap)
+                selected_expression_tcga = pd.read_parquet(CACHE_DIR.joinpath('xena_app.parq'), columns=xena_overlap)
                 selected_expression_tcga_ave = selected_expression_tcga.groupby(xena_metadata['dashboard_group']).median()
                 echart_option_tcga, events_tcga = plotting.expression_heatmap_plot(title, 
                                                                                    selected_expression_tcga_ave,
@@ -116,7 +117,7 @@ def sorf_details(sorf_df):
                 
                 formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
                 sql_query = f"SELECT * FROM transcript_tpm WHERE transcript_tpm.transcript_id IN ({formatted_ids});"
-                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect('../data/autoimmune_expression_atlas_v1.db')).fillna(0.01)
+                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db'))).fillna(0.01)
                 selected_expression_ai_ave = selected_expression_ai.pivot_table(index='group',
                                                                         columns='transcript_id',
                                                                         values='tpm', 

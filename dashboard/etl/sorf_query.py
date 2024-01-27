@@ -260,11 +260,13 @@ def parse_sorf_phase(sorf_df, session):
             phase_entries.append('Phase 1')
         else:
             orf = session.query(Orf).filter(Orf.id == int(row.vtx_id.split('-')[1])).one()
-            phase_ids.append(orf.velia_id)
+            
             if orf.velia_id.startswith('Phase'):
                 phase_entries.append(f'Phase {orf.velia_id[6]}')
+                phase_ids.append(orf.velia_id)
             else:
                 phase_entries.append('-1')
+                phase_ids.append('-1')
     return phase_ids, phase_entries
 
 def fix_missing_phase_ids(sorf_df):

@@ -159,12 +159,18 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     conservation_threshold = 70
     exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
+    is_not_isoform = df[isoform_cols].apply(lambda x: [not i=='None' for i in x]).max(axis=1)==0
     
     if filter_option == 'Ribo-Seq sORFs':
         df = df[df['Ribo-Seq sORF']]
 
     elif filter_option == 'Secreted':
         df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted]
+    
+    elif filter_option == 'Secreted & Novel':
+        df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted & \
+                is_not_isoform
+                ]
 
     elif filter_option == 'Secreted & Conserved':
         df = df[(df['Ribo-Seq sORF']) & \
@@ -174,7 +180,7 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     elif filter_option == 'Secreted & Conserved & Novel':
         df = df[(df['Ribo-Seq sORF']) & \
                 measured_secreted_or_predicted_secreted & \
-               ~(df[isoform_cols]).any(axis=1) & \
+               is_not_isoform & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
     elif filter_option ==  'Translated':

@@ -2,6 +2,10 @@
 from dashboard.etl.sorf_query import parallel_sorf_query, load_jsonlines_table, fix_missing_phase_ids, parse_sorf_phase
 from dashboard.etl.transcript_features import load_xena_transcripts_with_metadata_from_s3, process_sums_dataframe_to_heatmap, create_comparison_groups_xena_tcga_vs_normal, read_tcga_de_from_s3, load_de_results
 from dashboard.data_load import load_esmfold, load_mouse_blastp_results
+from dashboard.etl.etl_utils import fasta_write_veliadb_protein_sequences, merge_sorf_df_blast, write_nonsignal_aa_sequences, parse_blastp_json
+from dashboard.tabs.riboseq_atlas import get_average_coverage
+from dashboard.etl import module_path
+from dashboard.etl.run_protein_search_tools import run_protein_search_tools
 
 from veliadb import base
 from veliadb.base import Protein, ProteinXref, Orf
@@ -29,9 +33,6 @@ import shutil
 import subprocess
 import sqlite3
 import sys
-
-NCPU = 28
-
 
 def configure_logger(log_file=None, level=logging.INFO, overwrite_log=True,
                      format=logging.BASIC_FORMAT):
@@ -89,14 +90,17 @@ def pfunc(i, genome_reference):
 @click.argument('vtx_ids_file', type=click.Path(exists=True, resolve_path=True))
 @click.argument('cache_dir', type=click.Path(resolve_path=True))
 @click.argument('data_dir', type=click.Path(exists=True, resolve_path=True))
-@click.argument('protein_tools_path', type=click.Path(exists=True, resolve_path=True))
+# @click.argument('protein_tools_path', type=click.Path(exists=True, resolve_path=True))
+
 @click.option("--overwrite", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite existing cache directory")
 @click.option("--resume", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite existing cache directory")
 @click.option("--run_protein_tools", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite protein_data in the cache directory")
-def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrite, resume, run_protein_tools):
+@click.option("--number_threads", help="Number of threads to use for parallel computing.", default=8, type=int)
+
+def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_protein_tools, number_threads):
     """
     Primary function to update cache
 
@@ -141,8 +145,10 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     with open(vtx_ids_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
 
-    if overwrite:
+    sorfs_json_exists = cache_dir.joinpath('sorf_table.jsonlines').exists()
+    if overwrite or not sorfs_json_exists:
         # Query DB
+        logging.info("Query Orf Table")
         session = base.Session() 
         orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
         missing_orfs = set(ids) - set([i.id for i in orfs])
@@ -150,9 +156,9 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
         if len(missing_orfs) > 0:
             logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
         with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
-            with mp.Pool(NCPU) as ppool:
+            with mp.Pool(number_threads) as ppool:
                 func = functools.partial(helper_function, extra_arg=genome_reference)
-                for r in tqdm(ppool.imap(func, ids, chunksize=NCPU), total=len(ids)):
+                for r in tqdm(ppool.imap(func, ids, chunksize=number_threads), total=len(ids)):
                     fopen.write(json.dumps(r))
                     fopen.write('\n')
 
@@ -198,6 +204,11 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
 
     sorf_df = sorf_df[cols]
     session.close()
+    # Add ribo-seq coverage
+    ribo_df = get_average_coverage()
+    vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
+    array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in sorf_df.index]
+    sorf_df['Ribo-Seq RPKM Support'] = array_to_add
     
     # Generate fasta file for protein_tools run
     with open(cache_dir.joinpath('protein_data', 'protein_tools_input.fasta'), 'w') as fopen:
@@ -205,39 +216,30 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
            fopen.write(f">{row['vtx_id']}\n{row['aa'].replace('*', '')}\n")
 
     if run_protein_tools:
-        cmd = f"python {protein_tools_path} -i {cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')} -o {cache_dir.joinpath('protein_data')}"
-        logging.info(f'Running protein tools {cmd}')
+        vtx_aa_fasta_path = cache_dir.joinpath('protein_data', 'protein_tools_input.fasta')
+        output_prefix_path = cache_dir.joinpath('protein_data')
+        protein_etl_script = __file__.replace('update_cache.py', 'dashboard_etl.py')
+        cmd = f"python {protein_etl_script} -i {vtx_aa_fasta_path} -o {output_prefix_path}"
+        logging.info(f'Running protein feature prediction tools {cmd}')
         subprocess.run(shlex.split(cmd))
+        write_nonsignal_aa_sequences(output_prefix_path)
+        fasta_write_veliadb_protein_sequences(output_prefix_path) # Writes fastas with reference protein sequences in cache
+        logging.info(f'Running protein search tools {cmd}')
+        cmd = f"run_protein_search_tools {vtx_aa_fasta_path} {output_prefix_path} --number_threads {number_threads}"
+        subprocess.run(shlex.split(cmd))
+        hits_per_query, blast_sorf_table = parse_blastp_json(cache_dir.joinpath('protein_data', 'blastp.results.json'))
+        with open(cache_dir.joinpath('protein_data', 'blastp.results.pkl'), 'wb') as fwrite:
+            pickle.dump((hits_per_query, blast_sorf_table), fwrite)
 
+        logging.info("Finished running protein tools.")
+        
     # Massage table to standard format
     _, blastp_table = load_mouse_blastp_results(cache_dir)
-    sorf_df = sorf_df.merge(pd.DataFrame(blastp_table).T, left_index=True, right_index=True, how='left')
-    protein_scores = pd.read_csv(cache_dir.joinpath('protein_data', 'sequence_features_scores.csv'), index_col=0)
+    sorf_df = merge_sorf_df_blast(sorf_df, blastp_table, cache_dir.joinpath('protein_data'))
 
-    sorf_df = sorf_df.merge(protein_scores[['Deepsig', 'SignalP 6slow', 'SignalP 5b', 'SignalP 4.1']],
-                    left_index=True, right_index=True, how='left')
-    protein_strings = pd.read_csv(cache_dir.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
-    protein_cutsite = protein_strings.apply(lambda x: x.str.find('SO')+1).replace(0, -1).drop('Sequence', axis=1)
-    sorf_df = sorf_df.merge(protein_cutsite,
-                    left_index=True, right_index=True, how='left', suffixes=('_score', '_cut'))
-
-    id_data = pd.read_csv('s3://velia-data-dev/VDC_001_screening_collections/all_phases/interim_phase1to7_non-sigp_20230723.csv')
-
-    id_data.index = id_data['vtx_id']
-    sorf_df = sorf_df.merge(id_data[['trans1',
-            'trans2', 'trans3', 'sec1', 'sec2', 'sec3', 'translated_mean',
-            'secreted_mean', 'translated', 'swissprot_isoform', 'ensembl_isoform',
-            'refseq_isoform', 'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min',
-            'phylocsf_vals']], left_index=True, right_index=True, how='left')
-
-    with open(Path(data_dir).joinpath('all_secreted_phase1to7.txt'), 'r') as f:
-        secreted_ids = [i.strip() for i in f.readlines()]
-
-    sorf_df.insert(int(np.where(sorf_df.columns=='translated')[0][0]), 'secreted', [True if i in secreted_ids else False for i in sorf_df.index])
-    sorf_df['transcripts_exact'] = [tuple(i) for i in sorf_df['transcripts_exact']]
     
     logging.info(f'Adding ESMFold data')
-    esmfold = load_esmfold()
+    esmfold = load_esmfold(cache_dir.joinpath('protein_data', 'esmfold.jsonlines'))
     sorf_df['ESMFold plddt 90th percentile'] = [np.percentile(esmfold[s.replace('*', '')]['plddt'], 90) if s.replace('*', '') in esmfold else -1 for s in sorf_df['aa'].values]
     sorf_df.to_parquet(cache_dir.joinpath('sorf_df.parq'))
     
@@ -278,7 +280,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, protein_tools_path, overwrit
     xena_metadata.to_parquet(cache_dir.joinpath('xena_metadata.parq'))
     xena_expression.to_parquet(cache_dir.joinpath('xena_app.parq'))
     pickle.dump(xena_exact_heatmap_data, open(cache_dir.joinpath('xena_exact_heatmap.pkl'), 'wb'))
-    de_tables_dict, de_metadata = load_de_results(all_transcripts)
+    de_tables_dict, de_metadata = load_de_results(cache_dir, all_transcripts)
     de_tables_dict = {k.split('.')[0]:v for k, v in de_tables_dict.items()}
     tables = []
     for k, v in de_tables_dict.items():
