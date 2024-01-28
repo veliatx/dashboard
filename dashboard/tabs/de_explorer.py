@@ -4,7 +4,8 @@ import streamlit as st
 
 from dashboard import util
 from dashboard.etl import DATA_DIR
-from dashboard.data_load import load_autoimmune_contrasts
+from dashboard.data_load import load_autoimmune_contrasts, load_xena_heatmap_data
+from dashboard.tabs.expression_heatmap import filter_weak_expression, assign_top_tissues
 
 from collections import defaultdict
 from streamlit_plotly_events import plotly_events
@@ -35,16 +36,18 @@ def dataframe_with_selections(df):
 def plot_gene_volcano(plot_gene_df):
     """
     """
+    plot_gene_df.fillna('', inplace=True)
     fig = px.scatter(plot_gene_df, x='log2FoldChange', y='log10_padj', opacity=0.5,
                      color="Significant", color_discrete_map={True: "blue", False: "red"},
                      size_max=20, template='plotly_white',
                      labels={"log2FoldChange": "Log2(FoldChange)"},
-                     hover_data=['transcript_id', 'hgnc_name', 'vtx_id', 'contrast', 'velia_study'], render_mode='webgl')
+                     hover_data=['transcript_id', 'hgnc_name', 'vtx_id', 'contrast', 'velia_study', 'tissues', 'tau'], render_mode='webgl')
     fig.update_traces(marker=dict(size=12))
     fig.update_layout(legend_font=dict(size=18))
     fig.update_yaxes(autorange="reversed")
 
     return fig
+
 
 def download_qc_report_from_s3(velia_study):
     file_stem = f"s3://velia-piperuns-dev/expression_atlas/v1/{velia_study}/"
@@ -67,6 +70,12 @@ def de_page(sorf_df):
     sorf_df = util.filter_dataframe_preset(sorf_df, filter_option)
     transcript_to_hgnc = pd.read_csv(DATA_DIR / 'veliadb_v1.transcript2hgnc.csv.gz', index_col=0)
     db_address = DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')
+    
+    xena_tau_df, _, _ = load_xena_heatmap_data()
+    xena_tau_df = filter_weak_expression(xena_tau_df, sorf_df)
+    #xena_tau_df = xena_tau_df[xena_tau_df['tau'].between(.85, 1)].copy()
+    xena_tau_df, _ = assign_top_tissues(xena_tau_df)
+    
     transcript_to_vtx_map = defaultdict(list)
     for ix, row in sorf_df.iterrows():
         for t in row['transcripts_exact']:
@@ -193,17 +202,26 @@ def de_page(sorf_df):
         display_cols = [
             'velia_study', 'contrast', 'vtx_id', 'transcript_id', 'baseMean',
             'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
-            'gene_id', 'case_mean', 'control_mean', 
+            'gene_id', 'case_mean', 'control_mean', 'tau', 'tissues'
         ]
         
+
+        gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
+        gene_de_df = gene_de_df.merge(xena_tau_df[['tau', 'tissues']],
+                                      left_on='vtx_single', 
+                                      right_index=True, how='left')
+
+        gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter')
+
         vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
-        tx_cnt = gene_de_df['transcript_id'].nunique()
+        tx_cnt = gene_de_df['transcript_id'].nunique()      
 
         st.caption(f"{vtx_cnt} unique uPs on {tx_cnt} DE transcripts")
         st.dataframe(gene_de_df[display_cols])
 
         gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
         gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
+        
         volcano_fig = plot_gene_volcano(gene_de_df)
         selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
         # st.plotly_chart(volcano_fig)

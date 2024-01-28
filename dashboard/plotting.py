@@ -244,12 +244,12 @@ def expression_heatmap_plot(title, selected_expression, median_groups=False):
     return option, events
 
 
-def heatmap_plot(data, row_names, col_names, title, x_axis_interval = 0, y_axis_interval = 0):
+def heatmap_plot(data, row_names, col_names, title, x_axis_interval = 0, y_axis_interval = 0, scale='TPM'):
     js_col_names = "var cols = [" + ",".join([f"'{c}'" for c in col_names]) + "];"
     option = {
         "title": {"text": title},
         "tooltip": {
-            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median TPM: ' + params.data[2];}").js_code,
+            "formatter": JsCode("function (params) {" + js_col_names + "; return params.name + '<br>' + cols[params.data[1]] + '<br> Median " + scale + ": ' + params.data[2];}").js_code,
         },
         "xAxis": {
             "type": "category", 
@@ -341,7 +341,7 @@ def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df):
     col_names = list(col_map.keys())
     row_names = list(row_map.keys())
     title = "TCGA/GTEx Expression Atlas"   
-    option, events = heatmap_plot(data, row_names, col_names, title)
+    option, events = heatmap_plot(data, row_names, col_names, title, scale='Log2(TPM)')
     return option, events
 
 
