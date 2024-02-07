@@ -156,7 +156,7 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
     conservation_cols = ['tblastn_align_identity', 'blastp_align_identity', 'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity']
     isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform']
-    conservation_threshold = 70
+    conservation_threshold = 50
     exist_on_transcript = df['transcripts_exact'].apply(len).astype('bool')
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
     is_not_isoform = df[isoform_cols].apply(lambda x: [not i=='None' for i in x]).max(axis=1)==0
