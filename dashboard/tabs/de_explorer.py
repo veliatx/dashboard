@@ -184,7 +184,7 @@ def de_page(sorf_df):
         velia_study = ', '.join([f"'{i}'" for i in selection_df['velia_study'].values])
         
         with sqlite3.connect(db_address) as sqliteConnection:
-            sqliteConnection = sqlite3.connect(db_address)
+            # sqliteConnection = sqlite3.connect(db_address)
             query = f"""SELECT *
             FROM transcript_de
             WHERE transcript_de.padj <= {fdr}
@@ -205,41 +205,43 @@ def de_page(sorf_df):
             'gene_id', 'case_mean', 'control_mean', 'tau', 'tissues'
         ]
         
+        if gene_de_df.shape[0]>0:
+            gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
+            gene_de_df = gene_de_df.merge(xena_tau_df[['tau', 'tissues']],
+                                        left_on='vtx_single', 
+                                        right_index=True, how='left')
 
-        gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
-        gene_de_df = gene_de_df.merge(xena_tau_df[['tau', 'tissues']],
-                                      left_on='vtx_single', 
-                                      right_index=True, how='left')
+            gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter')
 
-        gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter')
+            vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
+            tx_cnt = gene_de_df['transcript_id'].nunique()      
 
-        vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
-        tx_cnt = gene_de_df['transcript_id'].nunique()      
+            st.caption(f"{vtx_cnt} unique uPs on {tx_cnt} DE transcripts")
+            st.dataframe(gene_de_df[display_cols])
 
-        st.caption(f"{vtx_cnt} unique uPs on {tx_cnt} DE transcripts")
-        st.dataframe(gene_de_df[display_cols])
-
-        gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
-        gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
-        
-        volcano_fig = plot_gene_volcano(gene_de_df)
-        selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
-        # st.plotly_chart(volcano_fig)
-        
-        # st.write(selected_points)
-        selected_vtx_ids = []
-        for x in selected_points:
-            hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][2]
-            selected_vtx_ids += hoverdata
-            # st.write(hoverdata)
-        # st.write(selected_vtx_ids)
-        # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
-        selected_vtx_ids = list(set(selected_vtx_ids))
-        try:
-            dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids].copy())
-        except Exception as e:
-            print(e)
-            st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
+            gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
+            gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
+            
+            volcano_fig = plot_gene_volcano(gene_de_df)
+            selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
+            # st.plotly_chart(volcano_fig)
+            
+            # st.write(selected_points)
+            selected_vtx_ids = []
+            for x in selected_points:
+                hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][2]
+                selected_vtx_ids += hoverdata
+                # st.write(hoverdata)
+            # st.write(selected_vtx_ids)
+            # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
+            selected_vtx_ids = list(set(selected_vtx_ids))
+            try:
+                dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids].copy())
+            except Exception as e:
+                print(e)
+                st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
+        else:
+            st.write('No transcripts with these filtering were found.')
     # dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids])
     
     # st.dataframe(availabe_studies)

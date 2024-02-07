@@ -166,9 +166,12 @@ def sorf_details(sorf_df):
             if (len(xena_overlap) > 0) and value_tcga:
                 st.write(value_tcga)
                 xena_vtx_exp_df = xena_metadata.merge(selected_expression_tcga, left_index=True, right_index=True)
-                fig_tcga = plotting.expression_vtx_boxplot(selected_transcript_tcga.split('.')[0], xena_vtx_exp_df)
-                st.plotly_chart(fig_tcga, use_container_width=True)
-                
+                try:
+                    fig_tcga = plotting.expression_vtx_boxplot(selected_transcript_tcga.split('.')[0], xena_vtx_exp_df)
+                    st.plotly_chart(fig_tcga, use_container_width=True)
+                except: 
+                    None
+                    
             if (len(selected_transcripts) > 0) and value_ai:    
                 fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
                     x='group', points = 'all',
