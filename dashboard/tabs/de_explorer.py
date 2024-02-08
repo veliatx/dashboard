@@ -65,6 +65,7 @@ def de_page(sorf_df):
                                                         'Secreted & Conserved & Novel',
                                                         'Translated',
                                                         'Translated & Conserved',
+                                                        'Translated & Conserved & Novel',
                                                         'All sORFs'), index = 0, key='sorf_detail_filter2')
     
     sorf_df = util.filter_dataframe_preset(sorf_df, filter_option)
