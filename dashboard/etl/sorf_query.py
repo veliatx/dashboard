@@ -29,7 +29,10 @@ def extract_nucleotide_sequence_veliadb(o, genome_seq):
     blocks = [int(x) for x in o.block_sizes.split(';')]
     chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
 
-    chrom = o.assembly.ucsc_style_name
+    if '_' in o.assembly.ucsc_style_name:
+        chrom = o.assembly.ucsc_style_name.split('_')[1].replace('v', '.')
+    else:
+        chrom = o.assembly.ucsc_style_name
    
     for i, block in enumerate(blocks):
         if o.strand == '-':
