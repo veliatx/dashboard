@@ -50,10 +50,10 @@ def load_sorf_df_conformed():
     df = add_temp_isoform_info(df) # Converted to use ETL format
 
     df = add_temp_tblastn_info(df) # Uses ETL Version
-
-    # df = add_temp_riboseq_info(df) # Moved to update_cache.py
     
     df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
+
+    df = add_temp_gwas(df)
 
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
@@ -71,7 +71,7 @@ def load_sorf_df_conformed():
                'translated': 'translated_hibit'}, axis=1, inplace=True)
     
     df[['start', 'end']] = df[['start', 'end']].astype(int)
-
+     
     return df
 
 
@@ -96,10 +96,20 @@ def reorder_table_cols(df):
         'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
         'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
         'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
-        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity']
+        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity',
+        'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
     
     return df[view_cols]
 
+
+def add_temp_gwas(df):
+    """
+    """
+    sorf_gwas_df = pd.read_csv(DATA_DIR.joinpath('embl_nhgri_gwas_v1.0.2.dashboard_sorfs.tsv'), sep='\t')
+    agg_df = sorf_gwas_df[['vtx_id', 'SNPS', 'MAPPED_TRAIT', 'P-VALUE']].groupby('vtx_id').aggregate(list)
+    df = df.merge(agg_df, left_index=True, right_index=True, how='left')
+    
+    return df
 
 def add_temp_nonsig_cons_info(df):
     ""
@@ -140,21 +150,6 @@ def add_temp_feature_info(df):
     df['vtx_id'] = df.index
 
     return df
-
-
-# def add_temp_riboseq_info(df):
-#     """
-#     """
-#     from dashboard.tabs.riboseq_atlas import get_average_coverage
-#     ribo_df = get_average_coverage()
-#     vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
-#     array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
-#     df['Ribo-Seq RPKM Support'] = array_to_add
-    
-#     df.index.name = 'vtx_id'
-#     df['vtx_id'] = df.index
-
-#     return df
 
 
 def add_temp_tblastn_info(df):
