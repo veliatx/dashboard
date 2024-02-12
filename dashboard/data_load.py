@@ -24,18 +24,57 @@ def load_autoimmune_atlas():
     return meta
 
 @st.cache_data()
-def load_autoimmune_contrasts():
+def load_autoimmune_metadata():
 
     """
     Temporary table for joining contrasts from the autoimmune studies to specific samples.
     To be replaced by table in autoimmune sqlitedb.
     """
-    db = sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db'))
-    contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", db)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+    with sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')) as sqliteConnection:
+        contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", sqliteConnection)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+        sample_meta_df = pd.read_sql(
+                                f"""SELECT
+                                        sample_id, 
+                                        sample_condition_1,
+                                        sample_condition_2,
+                                        sample_condition_3,
+                                        sample_type_1,
+                                        sample_type_2
+                                    FROM sample_metadata""",
+                                sqliteConnection,
+                            )
+            
     contrast_samples.index = contrast_samples.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
     contrast_samples.index.name = 'study -- contrast'
-    db.close()
-    return contrast_samples
+    contrast_samples['display'] = contrast_samples.apply(
+                                    lambda x: f"{x.velia_study} -- " +
+                                        f"{x.contrast.upper().split('VS')[0 if x.contrast_side == 'left' else 1].strip('_')}", 
+                                    axis=1,
+                                    )
+    return contrast_samples, sample_meta_df
+
+@st.cache_data(ttl='24h')
+def query_s3_normed_counts(
+                    study:str,
+                    contrast:str,
+                    ):
+    """
+    """
+    normed_counts_df = pd.read_csv(
+        f's3://velia-piperuns-dev/expression_atlas/v1/{study}/de_results/{study}_transcript_{contrast}.csv',
+        index_col=0,
+        )
+    normed_counts_df = normed_counts_df.loc[:,
+                            (normed_counts_df.columns.str.startswith('condition') & 
+                            (~normed_counts_df.columns.str.contains('meannormed'))) |
+                            normed_counts_df.columns.isin(('padj','log2FoldChange'))
+                            ]
+    normed_counts_df.rename(lambda x: x.split('_')[-1], inplace=True, axis=1)
+    normed_counts_df.loc['velia_study',:] = study
+    normed_counts_df.loc['contrast',:] = contrast
+    normed_counts_df['padj'].fillna(1.0, inplace=True)
+                        
+    return normed_counts_df
 
 @st.cache_data()
 def load_sorf_df_conformed():
