@@ -57,6 +57,13 @@ def plot_de_boxplots(
                 ) -> go.Figure:
     """
     """
+    # Color the boxes by study. 
+
+    colormap = {c:px.colors.qualitative.G10[i%len(px.colors.qualitative.G10)] \
+                for i,c in enumerate(counts_df['velia_study'].unique())}
+
+    counts_df['color'] = counts_df['velia_study'].map(lambda x: colormap[x])
+                    
     fig_box = px.box(
             counts_df,
             x='display',
@@ -64,13 +71,16 @@ def plot_de_boxplots(
             points='all',
             hover_data=['sample_condition_1','sample_condition_2','sample_type_1','sample_type_2'],
             hover_name='sample_id',
+            color='color',
+            boxmode='overlay',
         )
     fig_box.update_layout(
             xaxis_title='',
-            yaxis_title='normed_counts',
+            yaxis_title='approximate_tpm',
             title=f'{transcript} -- {vtx_id}',
             title_x=0.5,
             title_xanchor='center',
+            showlegend=False,
             )
 
     # Plot vertical lines separating experiments.
@@ -110,7 +120,7 @@ def plot_de_boxplots(
                         y1=y, 
                         label=dict(text='*', textposition='middle center', font=dict(size=12, color='black')),
                         ) 
-    fig_box.update_yaxes(range=[0.,max_counts + ((max_counts-min_counts)*0.5)])  
+    fig_box.update_yaxes(range=[-5.,max_counts + ((max_counts-min_counts)*(0.1*(plot_sig.shape[0]+1)))])  
 
     return fig_box
 
@@ -338,7 +348,11 @@ def de_page(sorf_df):
             selected_vtx_ids = []
             for x in selected_points:
                 hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']]
-                selected_vtx_ids.append((hoverdata[2][0], hoverdata[0]))
+                if isinstance(hoverdata[2], list):
+                    selected_vtx_ids.append((hoverdata[2][0], hoverdata[0]))
+                else:
+                    selected_vtx_ids.append((hoverdata[2], hoverdata[0]))
+
 
             # st.write(selected_vtx_ids)
             # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
