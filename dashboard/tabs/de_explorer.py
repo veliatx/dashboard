@@ -203,26 +203,31 @@ def de_page(sorf_df):
         display_cols = [
             'velia_study', 'contrast', 'vtx_id', 'transcript_id', 'baseMean',
             'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
-            'gene_id', 'case_mean', 'control_mean', 'tau', 'tissues'
+            'hgnc_name', 'case_mean', 'control_mean', 'tau', 'tissues', 
+            'SNPS', 'MAPPED_TRAIT', 'P-VALUE'
         ]
         
         if gene_de_df.shape[0]>0:
             gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
             gene_de_df = gene_de_df.merge(xena_tau_df[['tau', 'tissues']],
-                                        left_on='vtx_single', 
-                                        right_index=True, how='left')
-
+                                          left_on='vtx_single', 
+                                          right_index=True, how='left')
+            
+            gene_de_df = gene_de_df.merge(sorf_df[['SNPS', 'MAPPED_TRAIT', 'P-VALUE']],
+                                          left_on='vtx_single', 
+                                          right_index=True, how='left')
+            
             gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter')
 
             vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
             tx_cnt = gene_de_df['transcript_id'].nunique()      
 
+            gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
+            gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i]['hgnc_name'] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
+            
             st.caption(f"{vtx_cnt} unique uPs on {tx_cnt} DE transcripts")
             st.dataframe(gene_de_df[display_cols])
 
-            gene_de_df['Significant'] = gene_de_df['padj'] < 0.01
-            gene_de_df['hgnc_name'] = [transcript_to_hgnc.loc[i] if i in transcript_to_hgnc.index else 'na' for i in gene_de_df['transcript_id']]
-            
             volcano_fig = plot_gene_volcano(gene_de_df)
             selected_points = plotly_events(volcano_fig, click_event=True, hover_event=False, select_event=True)
             # st.plotly_chart(volcano_fig)

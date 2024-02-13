@@ -74,7 +74,9 @@ def assign_top_tissues(xena_tau_df):
 
     top_tissues = []
     tissue_cnt_dict = defaultdict(int)
-    for i, row in xena_tau_df.iterrows():
+    xdf = xena_tau_df.copy()
+    for i, row in xdf.iterrows():
+        row = row.drop('tau')
         tissue_list = list(row[row > np.percentile(row, 99)].index.values)
         top_tissues.append(tissue_list)
         for t in tissue_list:
@@ -85,7 +87,7 @@ def assign_top_tissues(xena_tau_df):
                                            orient='index',
                                            columns=['count'])
     tissue_cnt_df.index.name = 'tissue'
-    tissue_cnt_df.drop('tau', inplace=True)
+    #tissue_cnt_df.drop('tau', inplace=True)
     tissue_cnt_df.reset_index(inplace=True)
     tissue_cnt_df.sort_values(by='count', inplace=True, ascending=False)
     
@@ -152,7 +154,9 @@ def tissue_specific_page(sorf_df):
             plot_df = xena_tau_df.drop(columns=['tau', 'tissues'])
             option, events = plotting.expression_atlas_heatmap_plot(tissue_specific_vtx_ids, plot_df.T)
 
-            display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs', 'source']#, 'secreted_mean', 'translated_mean', 'isoform_of']
+            display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs', 
+                            'gene_xrefs', 'transcript_xrefs', 'source', 'secreted_mean', 'translated_mean',
+                            'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
             value = st_echarts(option, height="1000px", events=events)
             if value:
                 st.header('Selected sORF')
