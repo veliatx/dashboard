@@ -1,13 +1,14 @@
 import numpy as np
 import pandas as pd
 import streamlit as st
+from typing import List, Tuple
 
 import plotly.graph_objects as go
 import plotly.express as px
 
 from dashboard import util
 from dashboard.etl import DATA_DIR
-from dashboard.data_load import load_autoimmune_metadata, load_xena_heatmap_data, query_s3_normed_counts
+from dashboard.data_load import load_autoimmune_metadata, load_xena_heatmap_data, pull_s3_normed_counts
 from dashboard.tabs.expression_heatmap import filter_weak_expression, assign_top_tissues
 
 from collections import defaultdict
@@ -63,32 +64,54 @@ def plot_de_boxplots(
                 for i,c in enumerate(counts_df['velia_study'].unique())}
 
     counts_df['color'] = counts_df['velia_study'].map(lambda x: colormap[x])
+
+    # Set velia_study_contrast in counts_df and stats_df, used for grouping boxplot and pulling stats.
                     
+    counts_df['velia_study_contrast'] = counts_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- {x.contrast_side}', 
+                                            axis=1,
+                                            )
+    stats_df.reset_index(inplace=True, drop=False)
+    stats_df['velia_study_contrast_left'] = stats_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- left',
+                                            axis=1,
+                                            )
+    stats_df['velia_study_contrast_right'] = stats_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- right',
+                                            axis=1,
+                                            )
+    stats_df.set_index([
+                    'stat',
+                    'velia_study',
+                    'contrast',
+                    'display_left',
+                    'display_right',
+                    ], 
+                    inplace=True,
+                    )
+    stats_df.sort_values(['velia_study','contrast'], inplace=True)
+
     fig_box = px.box(
             counts_df,
-            x='display',
+            x='velia_study_contrast',
             y=transcript,
             points='all',
-            hover_data=['sample_condition_1','sample_condition_2','sample_type_1','sample_type_2'],
+            hover_data={
+                    c:False if c not in \
+                    ['sample_condition_1','sample_condition_2','sample_type_1','sample_type_2'] \
+                    else True for c in counts_df.columns
+                    },
             hover_name='sample_id',
             color='color',
             boxmode='overlay',
         )
-    fig_box.update_layout(
-            xaxis_title='',
-            yaxis_title='approximate_tpm',
-            title=f'{transcript} -- {vtx_id}',
-            title_x=0.5,
-            title_xanchor='center',
-            showlegend=False,
-            )
-
+                    
     # Plot vertical lines separating experiments.
 
-    exps_conds = counts_df['display'].unique()
-    exps = [*map(lambda x: x.split('--')[0].strip(), exps_conds)]
-    exps_idxs =  np.sort(np.unique(exps, return_index=True)[1])
-
+    exps_conds = counts_df['velia_study_contrast'].unique()
+    exps = [*map(lambda x: '--'.join(x.split('--')[:-1]).strip(), exps_conds)]
+    exps_idxs = np.sort(np.unique(exps, return_index=True)[1])
+                    
     for i in exps_idxs[1:]:
         fig_box.add_vline(x=i-0.5, line_color='gray', line_dash='dash')
 
@@ -100,27 +123,32 @@ def plot_de_boxplots(
     padj_cutoff = 0.01
     lfc_cutoff = 1.0
 
-    padj = stats_df.iloc[stats_df.index.get_level_values('stat') == 'padj'][[transcript]]
-    lfc = stats_df.iloc[stats_df.index.get_level_values('stat') == 'log2FoldChange'][[transcript]]           
-                        
+    padj = stats_df.iloc[stats_df.index.get_level_values('stat') == 'padj']
+    lfc = stats_df.iloc[stats_df.index.get_level_values('stat') == 'log2FoldChange']                
     plot_sig = np.where((padj[transcript] < padj_cutoff).values & (abs(lfc[transcript]) > lfc_cutoff).values)[0]
-                    
-    for i, y in enumerate(np.linspace(
-                    max_counts + max_counts*0.1, 
-                    max_counts + ((max_counts-min_counts)*0.4), 
-                    plot_sig.shape[0],
-                    )):
-        left_loc = np.where(exps_conds == padj.iloc[[plot_sig[i]]].index.get_level_values('display_left').values)[0][0]
-        right_loc = np.where(exps_conds == padj.iloc[[plot_sig[i]]].index.get_level_values('display_right').values)[0][0]
+
+    for l in plot_sig:
+        left_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_left'])[0][0]
+        right_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_right'])[0][0]
         fig_box.add_shape(
                         type="line", 
-                        x0=min(left_loc,right_loc), 
-                        y0=y, 
-                        x1=max(left_loc,right_loc), 
-                        y1=y, 
+                        x0=left_loc, 
+                        y0=max_counts + max_counts*0.1, 
+                        x1=right_loc, 
+                        y1=max_counts + max_counts*0.1, 
                         label=dict(text='*', textposition='middle center', font=dict(size=12, color='black')),
                         ) 
-    fig_box.update_yaxes(range=[-5.,max_counts + ((max_counts-min_counts)*(0.1*(plot_sig.shape[0]+1)))])  
+        
+    fig_box.update_layout(
+        xaxis_title='',
+        yaxis_title='approximate_tpm',
+        title=f'{transcript} -- {vtx_id}',
+        title_x=0.5,
+        title_xanchor='center',
+        showlegend=False,
+        height=600,
+        yaxis_range=[-5.,max_counts + max_counts*0.25],
+        )
 
     return fig_box
 
@@ -129,8 +157,8 @@ def build_normed_counts_dfs(
                 selected_contrasts_df:pd.DataFrame,
                 contrast:pd.DataFrame,
                 meta:pd.DataFrame,
-                selected_transcripts:list,
-                ):
+                selected_transcripts:List[str],
+                ) -> Tuple[pd.DataFrame,pd.DataFrame]:
     """
     Merges counts dataframes queried from s3 into one dataframe for plotting. df_stats is df with multi-index set on stat, 
     velia_study, contrast, display_left, and display_right.  
@@ -143,7 +171,7 @@ def build_normed_counts_dfs(
     Returns:
         df_counts, df_stats Tuple[pd.DataFrame,pd.DataFrame] 
     """
-    dfs = [query_s3_normed_counts(r.velia_study, r.contrast) for i,r in selected_contrasts_df.iterrows()]
+    dfs = [pull_s3_normed_counts(r.velia_study, r.contrast) for i,r in selected_contrasts_df.iterrows()]
     
     df_counts = pd.concat(
                 [df.loc[
@@ -183,8 +211,6 @@ def build_normed_counts_dfs(
             meta.fillna(''),
             on='sample_id',
             ).sort_values(['velia_study','contrast','contrast_side'], ascending=False)
-
-    df_counts.drop_duplicates('sample_id', inplace=True)
                     
     return df_counts, df_stats
 
@@ -408,7 +434,7 @@ def de_page(sorf_df):
                                                 selected_transcript_id,
                                                 selected_vtx_id,
                                             )
-                st.plotly_chart(boxplot_fig)
+                st.plotly_chart(boxplot_fig, use_container_width=True)
             
         else:
             st.write('No transcripts with these filtering were found.')

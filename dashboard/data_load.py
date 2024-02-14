@@ -54,7 +54,7 @@ def load_autoimmune_metadata():
     return contrast_samples, sample_meta_df
 
 @st.cache_data(ttl='24h')
-def query_s3_normed_counts(
+def pull_s3_normed_counts(
                     study:str,
                     contrast:str,
                     ):
