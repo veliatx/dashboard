@@ -126,7 +126,7 @@ def plot_de_boxplots(
     padj = stats_df.iloc[stats_df.index.get_level_values('stat') == 'padj']
     lfc = stats_df.iloc[stats_df.index.get_level_values('stat') == 'log2FoldChange']                
     plot_sig = np.where((padj[transcript] < padj_cutoff).values & (abs(lfc[transcript]) > lfc_cutoff).values)[0]
-
+    
     for l in plot_sig:
         left_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_left'])[0][0]
         right_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_right'])[0][0]
@@ -395,11 +395,9 @@ def de_page(sorf_df):
                                 .set_index('vtx_id')
             
             try:
-                # dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[[x[0] for x in selected_vtx_ids]].copy())
-                dashboard.tabs.sorf_explorer_table.sorf_details(gene_de_sorf_df)
+                dashboard.tabs.sorf_explorer_table.sorf_details(gene_de_sorf_df.copy())
             except Exception as e:
                 print(e)
-                # st.dataframe(sorf_df.loc[[x[0] for x in selected_vtx_ids]].copy().drop('show_details', axis=1))
                 st.dataframe(gene_de_sorf_df)
             
             st.title('DE boxplots')
