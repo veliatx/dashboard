@@ -1,10 +1,14 @@
+import numpy as np
 import pandas as pd
-import plotly.express as px
 import streamlit as st
+from typing import List, Tuple
+
+import plotly.graph_objects as go
+import plotly.express as px
 
 from dashboard import util
 from dashboard.etl import DATA_DIR
-from dashboard.data_load import load_autoimmune_contrasts, load_xena_heatmap_data
+from dashboard.data_load import load_autoimmune_metadata, load_xena_heatmap_data, pull_s3_normed_counts
 from dashboard.tabs.expression_heatmap import filter_weak_expression, assign_top_tissues
 
 from collections import defaultdict
@@ -13,8 +17,6 @@ import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.riboseq_atlas
 import streamlit.components.v1 as components
 import smart_open
-
-
 
 import sqlite3
 
@@ -47,6 +49,170 @@ def plot_gene_volcano(plot_gene_df):
     fig.update_yaxes(autorange="reversed")
 
     return fig
+
+def plot_de_boxplots(
+                    counts_df:pd.DataFrame,
+                    stats_df:pd.DataFrame,
+                    transcript:str,
+                    vtx_id:str,
+                ) -> go.Figure:
+    """
+    """
+    # Color the boxes by study. 
+
+    colormap = {c:px.colors.qualitative.G10[i%len(px.colors.qualitative.G10)] \
+                for i,c in enumerate(counts_df['velia_study'].unique())}
+
+    counts_df['color'] = counts_df['velia_study'].map(lambda x: colormap[x])
+
+    # Set velia_study_contrast in counts_df and stats_df, used for grouping boxplot and pulling stats.
+                    
+    counts_df['velia_study_contrast'] = counts_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- {x.contrast_side}', 
+                                            axis=1,
+                                            )
+    stats_df.reset_index(inplace=True, drop=False)
+    stats_df['velia_study_contrast_left'] = stats_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- left',
+                                            axis=1,
+                                            )
+    stats_df['velia_study_contrast_right'] = stats_df.apply(
+                                            lambda x: f'{x.velia_study} -- {x.contrast} -- right',
+                                            axis=1,
+                                            )
+    stats_df.set_index([
+                    'stat',
+                    'velia_study',
+                    'contrast',
+                    'display_left',
+                    'display_right',
+                    ], 
+                    inplace=True,
+                    )
+    stats_df.sort_values(['velia_study','contrast'], inplace=True)
+
+    fig_box = px.box(
+            counts_df,
+            x='velia_study_contrast',
+            y=transcript,
+            points='all',
+            hover_data={
+                    c:False if c not in \
+                    ['sample_condition_1','sample_condition_2','sample_type_1','sample_type_2'] \
+                    else True for c in counts_df.columns
+                    },
+            hover_name='sample_id',
+            color='color',
+            boxmode='overlay',
+        )
+                    
+    # Plot vertical lines separating experiments.
+
+    exps_conds = counts_df['velia_study_contrast'].unique()
+    exps = [*map(lambda x: '--'.join(x.split('--')[:-1]).strip(), exps_conds)]
+    exps_idxs = np.sort(np.unique(exps, return_index=True)[1])
+                    
+    for i in exps_idxs[1:]:
+        fig_box.add_vline(x=i-0.5, line_color='gray', line_dash='dash')
+
+    # Plot horizontal lines denoting significance.
+    
+    min_counts = counts_df.loc[:,transcript].min()
+    max_counts = counts_df.loc[:,transcript].max()
+
+    padj_cutoff = 0.01
+    lfc_cutoff = 1.0
+
+    padj = stats_df.iloc[stats_df.index.get_level_values('stat') == 'padj']
+    lfc = stats_df.iloc[stats_df.index.get_level_values('stat') == 'log2FoldChange']                
+    plot_sig = np.where((padj[transcript] < padj_cutoff).values & (abs(lfc[transcript]) > lfc_cutoff).values)[0]
+    
+    for l in plot_sig:
+        left_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_left'])[0][0]
+        right_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_right'])[0][0]
+        fig_box.add_shape(
+                        type="line", 
+                        x0=left_loc, 
+                        y0=max_counts + max_counts*0.1, 
+                        x1=right_loc, 
+                        y1=max_counts + max_counts*0.1, 
+                        label=dict(text='*', textposition='middle center', font=dict(size=12, color='black')),
+                        ) 
+        
+    fig_box.update_layout(
+        xaxis_title='',
+        yaxis_title='approximate_tpm',
+        title=f'{transcript} -- {vtx_id}',
+        title_x=0.5,
+        title_xanchor='center',
+        showlegend=False,
+        height=600,
+        yaxis_range=[-5.,max_counts + max_counts*0.25],
+        )
+
+    return fig_box
+
+@st.cache_data(ttl='45m')
+def build_normed_counts_dfs(
+                selected_contrasts_df:pd.DataFrame,
+                contrast:pd.DataFrame,
+                meta:pd.DataFrame,
+                selected_transcripts:List[str],
+                ) -> Tuple[pd.DataFrame,pd.DataFrame]:
+    """
+    Merges counts dataframes queried from s3 into one dataframe for plotting. df_stats is df with multi-index set on stat, 
+    velia_study, contrast, display_left, and display_right.  
+    
+    Args:
+        selected_contrasts pd.DataFrame
+        contrast pd.DataFrame
+        meta pd.DataFrame
+        selected_transcripts list
+    Returns:
+        df_counts, df_stats Tuple[pd.DataFrame,pd.DataFrame] 
+    """
+    dfs = [pull_s3_normed_counts(r.velia_study, r.contrast) for i,r in selected_contrasts_df.iterrows()]
+    
+    df_counts = pd.concat(
+                [df.loc[
+                     df.index.isin(selected_transcripts+['velia_study','contrast']),
+                     ~df.columns.isin(('log2FoldChange','padj'))
+                    ] for df in dfs], 
+                ignore_index=False,
+                axis=1,
+                ).fillna(0.0).T
+
+    df_stats = pd.concat(
+                [df.loc[
+                    df.index.isin(selected_transcripts+['velia_study','contrast']),
+                    ['log2FoldChange','padj']
+                    ].T for df in dfs],
+                ignore_index=False,
+                axis=0,
+                )
+                    
+    df_stats.loc['log2FoldChange'] = df_stats.loc['log2FoldChange'].fillna(0.0)
+    df_stats.loc['padj'] = df_stats.loc['padj'].fillna(1.0)
+
+    df_stats[['left','right']] = df_stats['contrast'].str.upper().str.split('_VS_', expand=True)
+    df_stats['display_left'] = df_stats.apply(lambda x: f'{x.velia_study} -- {x.left}', axis=1) 
+    df_stats['display_right'] = df_stats.apply(lambda x: f'{x.velia_study} -- {x.right}', axis=1)
+    df_stats.drop(['left','right'],axis=1, inplace=True)
+    df_stats.index.name = 'stat'
+    df_stats.set_index(['velia_study','contrast','display_left','display_right'], append=True, inplace=True)
+
+    df_counts = df_counts.merge(
+            contrast[
+                contrast['contrast'].isin(selected_contrasts_df['contrast'])
+                ][['sample_id','display','contrast_side']],
+            left_index=True,
+            right_on='sample_id',
+            ).merge(
+            meta.fillna(''),
+            on='sample_id',
+            ).sort_values(['velia_study','contrast','contrast_side'], ascending=False)
+                    
+    return df_counts, df_stats
 
 
 def download_qc_report_from_s3(velia_study):
@@ -97,12 +263,7 @@ def de_page(sorf_df):
 
     available_studies_df.index = available_studies_df.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
     
-    contrast_samples = load_autoimmune_contrasts()
-    # contrast_samples = load_autoimmune_contrasts().groupby(['study -- contrast','contrast_side']).agg(','.join)
-    # contrast_samples['samples_left'] = contrast_samples.loc[contrast_samples.index.get_level_values('contrast_side') == 'left']['sample_id']
-    # contrast_samples['samples_right'] = contrast_samples.loc[contrast_samples.index.get_level_values('contrast_side') == 'right']['sample_id']
-    # contrast_samples.reset_index('contrast_side', inplace=True, drop=True)
-    # contrast_samples = contrast_samples[['samples_left','samples_right']].groupby('study -- contrast').agg(sum)
+    contrast_samples, sample_meta_df = load_autoimmune_metadata()
 
     selection = st.multiselect(
         'Choose one or more studies', 
@@ -117,21 +278,6 @@ def de_page(sorf_df):
     
     if selection_df.shape[0] > 0:
         st.caption(f"Your selection: {selection_df.shape[0]} studies")
-
-        with sqlite3.connect(db_address) as sqliteConnection:
-            sample_meta_df = pd.read_sql(
-                                f"""SELECT
-                                        sample_id, 
-                                        sample_condition_1,
-                                        sample_condition_2,
-                                        sample_condition_3,
-                                        sample_type_1,
-                                        sample_type_2
-                                    FROM sample_metadata where velia_study in 
-                                        ({(','.join(selection_df['velia_study'].map(lambda x: "'"+x+"'").unique()))});
-                                """,
-                                sqliteConnection,
-                            )
             
         selection_df = selection_df.merge(
                                         contrast_samples[['sample_id','contrast_side']], 
@@ -176,7 +322,6 @@ def de_page(sorf_df):
                                     ).agg(sum).reset_index(['velia_study','contrast'], drop=False)
 
         st.dataframe(selection_df)
-        #st.write(selection)
         
         fdr = .5
         tpm_mean = 4
@@ -185,7 +330,6 @@ def de_page(sorf_df):
         velia_study = ', '.join([f"'{i}'" for i in selection_df['velia_study'].values])
         
         with sqlite3.connect(db_address) as sqliteConnection:
-            # sqliteConnection = sqlite3.connect(db_address)
             query = f"""SELECT *
             FROM transcript_de
             WHERE transcript_de.padj <= {fdr}
@@ -235,17 +379,67 @@ def de_page(sorf_df):
             # st.write(selected_points)
             selected_vtx_ids = []
             for x in selected_points:
-                hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']][2]
-                selected_vtx_ids += hoverdata
-                # st.write(hoverdata)
+                hoverdata = volcano_fig.data[x['curveNumber']]['customdata'][x['pointIndex']]
+                if isinstance(hoverdata[2], list):
+                    selected_vtx_ids.append((hoverdata[2][0], hoverdata[0]))
+                else:
+                    selected_vtx_ids.append((hoverdata[2], hoverdata[0]))
+
+
             # st.write(selected_vtx_ids)
             # st.write(len(volcano_fig.data), len(volcano_fig.data[0]['customdata']), len(volcano_fig.data[1]['customdata']))
             selected_vtx_ids = list(set(selected_vtx_ids))
+
+            gene_de_sorf_df = gene_de_df.explode('vtx_id')
+            gene_de_sorf_df = gene_de_sorf_df[
+                                gene_de_sorf_df['vtx_id'].isin([x[0] for x in selected_vtx_ids]) & \
+                                gene_de_sorf_df['transcript_id'].isin([x[1] for x in selected_vtx_ids])
+                                ]
+            gene_de_sorf_df = gene_de_sorf_df[['vtx_id','velia_study','contrast','transcript_id','log2FoldChange','padj','Significant']] \
+                                .merge(sorf_df.reset_index(drop=True), on='vtx_id') \
+                                .drop('show_details', axis=1) \
+                                .set_index('vtx_id')
+            
             try:
-                dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids].copy())
+                dashboard.tabs.sorf_explorer_table.sorf_details(gene_de_sorf_df.copy())
             except Exception as e:
                 print(e)
-                st.dataframe(sorf_df.loc[selected_vtx_ids].copy().drop('show_details', axis=1))
+                st.dataframe(gene_de_sorf_df)
+            
+            st.title('DE boxplots')
+   
+            if len(selected_vtx_ids) > 0:
+
+                boxplot_studies = st.multiselect(   
+                                        'Select contrasts for boxplot',
+                                        list(available_studies_df.index),
+                                        default=list(selection_df.index),
+                                    )
+
+                selected_df_boxplots = available_studies_df.loc[boxplot_studies]
+
+                if selected_df_boxplots.shape[0] > 0:
+
+                    normed_counts_df, stats_df = build_normed_counts_dfs(
+                                                        selected_df_boxplots,
+                                                        contrast_samples,
+                                                        sample_meta_df,
+                                                        [x[1] for x in selected_vtx_ids],
+                                                    )
+                    
+                    selected_vtx_id, selected_transcript_id = st.selectbox(
+                                                        'Selected transcripts:', 
+                                                        selected_vtx_ids, 
+                                                        format_func=lambda x: f'{x[0]} -- {x[1]}',
+                                                    )
+                    boxplot_fig = plot_de_boxplots(
+                                                normed_counts_df,
+                                                stats_df,
+                                                selected_transcript_id,
+                                                selected_vtx_id,
+                                            )
+                st.plotly_chart(boxplot_fig, use_container_width=True)
+            
         else:
             st.write('No transcripts with these filtering were found.')
     # dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df.loc[selected_vtx_ids])
