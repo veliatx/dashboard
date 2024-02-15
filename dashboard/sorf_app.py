@@ -17,7 +17,7 @@ APP_NAME = 'sorf'
 def genome_browser():
     """
     """
-    components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
+    components.iframe("http://10.65.25.231:8081/velia_collections.html", height=1200, scrolling=True)
 
 
 def main():

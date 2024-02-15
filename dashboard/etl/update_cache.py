@@ -257,8 +257,8 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
     
     tissue_pairs.to_parquet(cache_dir.joinpath('gtex_tcga_pairs.parq'))
     xena.to_parquet(cache_dir.joinpath('xena.parq'))
-    de_genes = read_tcga_de_from_s3('velia-analyses-dev',
-                     'VAP_20230329_tcga_differential_expression', output_dir = cache_dir)
+    # de_genes = read_tcga_de_from_s3('velia-analyses-dev',
+                    #  'VAP_20230329_tcga_differential_expression', output_dir = cache_dir)
     
     xena_expression = xena[xena.columns[6:]]
     xena_metadata = metadata
