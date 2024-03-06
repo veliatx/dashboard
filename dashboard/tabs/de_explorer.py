@@ -345,7 +345,7 @@ def de_page(sorf_df):
                                                             studies=selection_df['velia_study'].tolist(),
                                                             contrasts=selection_df['contrast'].tolist(),
                                                             sequenceregions_type='transcript',
-                                                            log10_padj_threshold=-1.*np.log10(fdr),
+                                                            log10_padj_threshold=np.log10(fdr),
                                                             log2_fc_threshold=log2fc,
                                                             mean_threshold=tpm_mean,
                                                             )
