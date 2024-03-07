@@ -132,6 +132,7 @@ def sorf_details(sorf_df):
                                        )
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+                    value_tcga = None
                     
                 st.title('Autoimmune Expression Atlas')
                 title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
@@ -164,6 +165,7 @@ def sorf_details(sorf_df):
                                        )
                 else:
                     st.write('No transcripts in Velia Autoimmune Atlas found containing this sORF')
+                    value_ai = None
 
             with col2:
 
@@ -193,7 +195,7 @@ def sorf_details(sorf_df):
                                                                 ).fillna(0.01)
 
                     bar_plot_ai_df.rename({'contrast_name':'contrast','velia_id':'velia_study'}, axis=1, inplace=True)
-
+                    
                     option_ai_de = plotting.bar_plot_expression_group_autoimmune(
                             bar_plot_ai_df,
                             f'Autoimmune DE - {selected_transcript_ai}',
