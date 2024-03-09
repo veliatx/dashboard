@@ -53,29 +53,6 @@ def load_autoimmune_metadata():
                                     )
     return contrast_samples, sample_meta_df
 
-@st.cache_data(ttl='24h')
-def pull_s3_normed_counts(
-                    study:str,
-                    contrast:str,
-                    ):
-    """
-    """
-    normed_counts_df = pd.read_csv(
-        f's3://velia-piperuns-dev/expression_atlas/v1/{study}/de_results/{study}_transcript_{contrast}.csv',
-        index_col=0,
-        )
-    normed_counts_df = normed_counts_df.loc[:,
-                            (normed_counts_df.columns.str.startswith('condition') & 
-                            (~normed_counts_df.columns.str.contains('meannormed'))) |
-                            normed_counts_df.columns.isin(('padj','log2FoldChange'))
-                            ]
-    normed_counts_df.rename(lambda x: x.split('_')[-1], inplace=True, axis=1)
-    normed_counts_df.loc['velia_study',:] = study
-    normed_counts_df.loc['contrast',:] = contrast
-    normed_counts_df['padj'].fillna(1.0, inplace=True)
-                        
-    return normed_counts_df
-
 @st.cache_data()
 def load_sorf_df_conformed():
     """
