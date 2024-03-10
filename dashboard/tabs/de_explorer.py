@@ -402,6 +402,7 @@ def de_page(sorf_df):
                     st.dataframe(gene_de_sorf_df)
             else:
                 st.title('Selected Transcripts')
+                gene_de_df = gene_de_df.loc[:,gene_de_df.columns != 'vtx_id']
                 st.dataframe(gene_de_df[gene_de_df['transcript_id'].isin([x[1] for x in selected_pts_ids])])
             
             st.title('DE boxplots')
