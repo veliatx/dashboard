@@ -126,7 +126,7 @@ def bar_plot_expression_groups_tcga(transcript_id, group_name, group_members, ti
     return option
 
 
-def bar_plot_expression_group_autoimmune(df, title, db_path):
+def bar_plot_expression_group_autoimmune(df, title):
     """
     """
     group_members = ['control_mean', 'case_mean']
