@@ -116,8 +116,8 @@ def plot_de_boxplots(
         ], 
         inplace=True,
     )
-    counts_df.sort_values('velia_study_contrast', inplace=True)
-    stats_df.sort_values(['velia_study','contrast'], inplace=True)
+    counts_df.sort_values('velia_study_contrast', inplace=True, ascending=False)
+    stats_df.sort_values(['velia_study','contrast'], inplace=True, ascending=False)
 
     fig_box = px.box(
         counts_df,
