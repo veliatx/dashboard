@@ -131,6 +131,7 @@ def plot_de_boxplots(
         hover_name='sample_id',
         color='color',
         boxmode='overlay',
+        category_orders={'velia_study_contrast': counts_df['velia_study_contrast'].unique()},
     )
                     
     # Plot vertical lines separating experiments.
@@ -152,7 +153,7 @@ def plot_de_boxplots(
     padj = stats_df.iloc[stats_df.index.get_level_values('stat') == 'padj']
     lfc = stats_df.iloc[stats_df.index.get_level_values('stat') == 'log2foldchange']                            
     plot_sig = np.where((padj[transcript] < padj_cutoff).values & (abs(lfc[transcript]) > lfc_cutoff).values)[0]
-    
+                    
     for l in plot_sig:
         left_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_left'])[0][0]
         right_loc = np.where(exps_conds == padj.iloc[l]['velia_study_contrast_right'])[0][0]
