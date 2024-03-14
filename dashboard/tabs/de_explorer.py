@@ -385,6 +385,10 @@ def de_page(sorf_df):
             
             selected_pts_ids = list(set(selected_pts_ids))
 
+            if len(selected_pts_ids) > 100:
+                st.write(f"That's a lot of microproteins! You chose {len(selected_pts_ids)}. Try choosing a few less.")
+                selected_pts_ids = []
+
             if filter_option == 'sORF Transcripts Only':
 
                 gene_de_sorf_df = gene_de_df.explode('vtx_id')
