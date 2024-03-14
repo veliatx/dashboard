@@ -241,6 +241,7 @@ def sorf_details(sorf_df):
                     col3.altair_chart(achart, use_container_width=False)
                             
                 with col4:
+                    st.download_button('Download PDB Structure', structure, file_name = f"{vtx_id}.pdb")
                     modified_structure_colors = plotting.color_protein_terminal_ends(sorf_aa_seq, structure)
                     view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
                     view.addModel(modified_structure_colors, 'pdb')
