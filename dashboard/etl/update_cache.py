@@ -144,6 +144,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
 
     with open(vtx_ids_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
+        ids = list(set(ids))
 
     sorfs_json_exists = cache_dir.joinpath('sorf_table.jsonlines').exists()
     if overwrite or not sorfs_json_exists:
