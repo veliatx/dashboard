@@ -144,6 +144,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
 
     with open(vtx_ids_file) as fhandle:
         ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
+        ids = list(set(ids))
 
     sorfs_json_exists = cache_dir.joinpath('sorf_table.jsonlines').exists()
     if overwrite or not sorfs_json_exists:
@@ -238,7 +239,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
     sorf_df = merge_sorf_df_blast(sorf_df, blastp_table, cache_dir.joinpath('protein_data'))
 
     
-    logging.info(f'Adding ESMFold data')
+    # logging.info(f'Adding ESMFold data')
     esmfold = load_esmfold(cache_dir.joinpath('protein_data', 'esmfold.jsonlines'))
     sorf_df['ESMFold plddt 90th percentile'] = [np.percentile(esmfold[s.replace('*', '')]['plddt'], 90) if s.replace('*', '') in esmfold else -1 for s in sorf_df['aa'].values]
     sorf_df.to_parquet(cache_dir.joinpath('sorf_df.parq'))
@@ -257,8 +258,8 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
     
     tissue_pairs.to_parquet(cache_dir.joinpath('gtex_tcga_pairs.parq'))
     xena.to_parquet(cache_dir.joinpath('xena.parq'))
-    # de_genes = read_tcga_de_from_s3('velia-analyses-dev',
-                    #  'VAP_20230329_tcga_differential_expression', output_dir = cache_dir)
+    read_tcga_de_from_s3('velia-analyses-dev',
+                     'VAP_20230329_tcga_differential_expression', output_dir = cache_dir)
     
     xena_expression = xena[xena.columns[6:]]
     xena_metadata = metadata
