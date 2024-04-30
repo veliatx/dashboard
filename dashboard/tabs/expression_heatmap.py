@@ -102,14 +102,12 @@ def tissue_specific_page(sorf_df):
     with st.container():
         col1, col2 = st.columns(2)
         with col1:
-            filter_option = st.selectbox('Select sORF Collection', ('Ribo-Seq sORFs',
+            filter_option = st.selectbox('Select sORF Collection', (
                                                         'Secreted',
                                                         'Secreted & Novel',
                                                         'Secreted & Conserved',
                                                         'Secreted & Conserved & Novel',
-                                                        'Translated',
-                                                        'Translated & Conserved',
-                                                        'All sORFs'), index = 0, key='sorf_detail_filter2')
+                                                        ), index = 0, key='sorf_detail_filter2')
 
         with col2:
             values = st.slider(

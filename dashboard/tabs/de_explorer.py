@@ -192,15 +192,12 @@ def de_page(sorf_df):
     Session = base.configure(DB_CONNECTION_STRING)
     SessionRedshift = base.configure(REDSHIFT_CONNECTION_STRING)
 
-    filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
+    filter_option = st.selectbox('Pre-filtered sORFs:', (
                                                         'Secreted',
                                                         'Secreted & Novel',
                                                         'Secreted & Conserved',
                                                         'Secreted & Conserved & Novel',
-                                                        'Translated',
-                                                        'Translated & Conserved',
-                                                        'Translated & Conserved & Novel',
-                                                        'All sORFs'), index = 0, key='sorf_detail_filter2')
+                                                        ), index = 0, key='sorf_detail_filter2')
     
     if not st.session_state.get('sorf_df') or filter_option != st.session_state['sorf_df']['filter_option']:
         
