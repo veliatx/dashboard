@@ -87,6 +87,11 @@ def load_sorf_df_conformed():
                'translated': 'translated_hibit'}, axis=1, inplace=True)
     
     df[['start', 'end']] = df[['start', 'end']].astype(int)
+
+
+    signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
+    measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
+    df = df[measured_secreted_or_predicted_secreted]
      
     return df
 
@@ -126,6 +131,7 @@ def add_temp_gwas(df):
     df = df.merge(agg_df, left_index=True, right_index=True, how='left')
     
     return df
+
 
 def add_temp_nonsig_cons_info(df):
     ""

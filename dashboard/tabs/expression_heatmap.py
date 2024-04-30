@@ -131,11 +131,11 @@ def tissue_specific_page(sorf_df):
         st.plotly_chart(fig, use_container_width=True)
 
         selected_tissues = st.multiselect('Select Tissue(s):', 
-                                     ['All Tissues'] + list(xena_tau_df.columns),
+                                     ['All Tissues'] + [c for c in xena_tau_df.columns if c not in ('tau', 'tissues',)],
                                      key='tissue_specific_selection')
         
         if 'All Tissues' in selected_tissues:
-            selected_tissues = list(xena_tau_df.columns)
+            selected_tissues = list([c for c in xena_tau_df.columns if c not in ('tau', 'tissues',)])
         
         if selected_tissues:
             tissue_specific_vtx_ids = []
@@ -145,31 +145,32 @@ def tissue_specific_page(sorf_df):
                     if t in selected_tissues:
                         tissue_specific_vtx_ids.append(i)
 
-            st.write(f'{len(tissue_specific_vtx_ids)}')
-            st.write(xena_tau_df.shape)
-
+            st.write(f'{len(tissue_specific_vtx_ids)} tissue specific sORFs selected')
+        
         #st.write(xena_vtx_sum_df.astype(float))
-
-        if selected_tissues and len(tissue_specific_vtx_ids) > 1:
+        if selected_tissues and len(tissue_specific_vtx_ids) > 0:
             plot_df = xena_tau_df.drop(columns=['tau', 'tissues'])
-            option, events = plotting.expression_atlas_heatmap_plot(tissue_specific_vtx_ids, plot_df.T)
-
-            display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs', 
+            display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs',
                             'gene_xrefs', 'transcript_xrefs', 'source', 'secreted_mean', 'translated_mean',
                             'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
-            value = st_echarts(option, height="1000px", events=events)
-            if value:
-                st.header('Selected sORF')
-                st.dataframe(sorf_df[sorf_df['vtx_id'] == value][display_cols])
+            
+            # TODO: Can't determine linkage when only one sample/vtx_id. Need to change in expression_atlas_heatmap_plot. 
+            if len(selected_tissues) > 1 and len(tissue_specific_vtx_ids) > 1:
+                option, events = plotting.expression_atlas_heatmap_plot(tissue_specific_vtx_ids, plot_df.T, selected_tissues)
+
+                value = st_echarts(option, height="1000px", events=events)
+                if value:
+                    st.header('Selected sORF')
+                    st.dataframe(sorf_df[sorf_df['vtx_id'] == value][display_cols])
                 
-                fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
-                st.plotly_chart(fig, use_container_width=True)
+                    fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
+                    st.plotly_chart(fig, use_container_width=True)
 
             df = sorf_df[sorf_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
             exp_df = xena_tau_df.loc[tissue_specific_vtx_ids][['tissues', 'tau']].copy()
             df = df.merge(exp_df, left_index=True, right_index=True)
             st.header('Tissue specific sORFs')
-            st.write(df.shape)
+            
             st.dataframe(df)
 
             st.download_button(

@@ -316,12 +316,13 @@ def heatmap_plot(data, row_names, col_names, title, x_axis_interval = 0, y_axis_
     return option, events
 
 
-def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df):
+def expression_atlas_heatmap_plot(tissue_specific_vtx_ids, xena_vtx_sum_df, selected_tissues):
 
     """
     """
 
     xena_vtx_sum_df = xena_vtx_sum_df[tissue_specific_vtx_ids].copy()
+    xena_vtx_sum_df = xena_vtx_sum_df.loc[selected_tissues]
 
     # compute the clusters
     row_clusters = linkage(xena_vtx_sum_df.T.values, method='complete', metric='euclidean')
