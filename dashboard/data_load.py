@@ -60,17 +60,43 @@ def load_sorf_df_conformed():
     df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
     df.drop('nonsignal_seqs', axis=1, inplace=True)
     #df = df[df['aa_length'] <= 150].copy()
-
+    
     df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb or something
     
     df = add_temp_isoform_info(df) # Converted to use ETL format
-
-    df = add_temp_tblastn_info(df) # Uses ETL Version
     
+    df = add_temp_tblastn_info(df) # Uses ETL Version
+
+    # TODO: These are getting filtered because Ribo-Seq sORF is not flagged for these transcripts. 
+    keep_vtx_no_translated = \
+    """VTX-0850289
+    VTX-0087278
+    VTX-0774612
+    VTX-0850643
+    VTX-0851353
+    VTX-0060798
+    VTX-0850465
+    VTX-0069174
+    VTX-0699909
+    VTX-0852737
+    VTX-0851971
+    VTX-0851127
+    VTX-0850174
+    VTX-0850841
+    VTX-0852738
+    VTX-0851309
+    VTX-0826742
+    VTX-0852041
+    VTX-0015094
+    VTX-0851455
+    VTX-0087278"""
+    keep_vtx_no_translated = df['vtx_id'].isin([v.strip() for v in keep_vtx_no_translated.split('\n')])
+    df.loc[keep_vtx_no_translated, 'screening_phase'] = 'TEMPORARY_KEEP'
+
     df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
-
+    
     df = add_temp_gwas(df)
-
+    
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
     feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
@@ -249,7 +275,8 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
         (df['screening_phase'] == 'Not Screened') |
-        (df['orf_xrefs'].astype(str).str.contains('RibORF')))
+        (df['orf_xrefs'].astype(str).str.contains('RibORF')) | 
+        (df['screening_phase'] == 'TEMPORARY_KEEP')) 
     
     ribo_df = df[df['Ribo-Seq sORF']].copy()
     x = ribo_df.groupby('aa').aggregate(list)
