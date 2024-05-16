@@ -263,6 +263,8 @@ def sorf_details(sorf_df):
             hmmer_df = data_load.load_hmmer_results(vtx_id)
             if not isinstance(hmmer_df, pd.DataFrame):
                 st.write('HMMER search not available for this microprotein. :slightly_frowning_face:')
+            elif hmmer_df['species__display'].values[0].size == 1:
+                st.write('Only query sequence found. No informative conservation information available. :slightly_frowning_face:')
             else:
                 st.header('Conservation Features', help=description.hmmer_meta_features_text)
                 if st.toggle('Trimmed Alignment', value=True):
