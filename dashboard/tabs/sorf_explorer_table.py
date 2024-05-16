@@ -15,6 +15,8 @@ from dashboard.etl import DATA_DIR, CACHE_DIR, DB_CONNECTION_STRING, REDSHIFT_CO
 
 from expression_atlas_db import base, queries
 
+from multiplealignment import plotting_tools 
+
 # # Auto-wrap all the query functions in st.cache_data. 
 
 # for name, f in inspect.getmembers(queries, inspect.isfunction):
@@ -256,6 +258,25 @@ def sorf_details(sorf_df):
             st.header('AA Feature Predictions', help=description.amino_acid_features_hover_text)
             st.altair_chart(altair_signal_features_fig, use_container_width=True)
 
+        with st.expander("HMMER results", expanded=True):
+
+            hmmer_df = data_load.load_hmmer_results(vtx_id)
+            if not isinstance(hmmer_df, pd.DataFrame):
+                st.write('HMMER search not available for this microprotein. :slightly_frowning_face:')
+            else:
+                st.header('Conservation Features', help=description.hmmer_meta_features_text)
+                if st.toggle('Trimmed Alignment', value=True):
+                    fit_hmmer = plotting_tools.alignment_heatmap_with_meta(
+                        hmmer_df,
+                        alignment_key='alignment__display',
+                    )
+                else:
+                    fit_hmmer = plotting_tools.alignment_heatmap_with_meta(
+                        hmmer_df,
+                        alignment_key='untrimmed_alignment__display',
+                    )
+                st.plotly_chart(fit_hmmer, use_container_width=True)
+
         
         with st.expander("BLASTp results", expanded=True):
             # Blastp Mouse
@@ -270,3 +291,5 @@ def sorf_details(sorf_df):
                     long_text+= h['alignment'] + '  \n  \n'
     
             stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
+        
+        

@@ -9,7 +9,7 @@ import streamlit as st
 import sqlite3
 
 from dashboard.util import convert_list_string
-from dashboard.etl import CACHE_DIR, DATA_DIR, NOTEBOOK_DATA_DIR
+from dashboard.etl import CACHE_DIR, DATA_DIR, HMMER_S3_LOC, NOTEBOOK_DATA_DIR
 
 from ast import literal_eval
 from collections import defaultdict
@@ -383,3 +383,12 @@ def load_phylocsf_data():
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
     return pcsf
+
+@st.cache_data()
+def load_hmmer_results(vtx_id, hmmer_loc=HMMER_S3_LOC):
+    """
+    """
+    try:
+        return pd.read_parquet(f'{hmmer_loc}{vtx_id}.parq')
+    except FileNotFoundError as e:
+        return 
