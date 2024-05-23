@@ -45,7 +45,7 @@ def run_protein_search_tools(input_vtx, output_prefix, number_threads):
     subprocess.run(shlex.split(full_cmd))
 
     isoform_df = pd.read_csv(output_prefix.joinpath(f'{input_vtx.stem}_{fasta_file.stem}_alignments.m8'), sep='\t', names=options.split()[1].split(','))
-    isoform_df = isoform_df[(isoform_df['pident'] == 100.0)]
+    isoform_df = isoform_df[(isoform_df['pident'] >= 90)]
     isoform_df.drop_duplicates(inplace=True)
     swissprot_isoform_df = isoform_df.groupby('query').aggregate(list)
     swissprot_isoform_df.rename(columns={'target': 'swissprot_isoform'}, inplace=True)
@@ -62,7 +62,7 @@ def run_protein_search_tools(input_vtx, output_prefix, number_threads):
     subprocess.run(shlex.split(full_cmd))
     
     isoform_df = pd.read_csv(output_prefix.joinpath(f'{input_vtx.stem}_{fasta_file.stem}_alignments.m8'), sep='\t', names=options.split()[1].split(','))
-    isoform_df = isoform_df[(isoform_df['pident'] == 100.0)]
+    isoform_df = isoform_df[(isoform_df['pident'] >= 90)]
     isoform_df.drop_duplicates(inplace=True)
     ensembl_isoform_df = isoform_df.groupby('query').aggregate(list)
     ensembl_isoform_df.rename(columns={'target': 'ensembl_isoform'}, inplace=True)
@@ -79,7 +79,7 @@ def run_protein_search_tools(input_vtx, output_prefix, number_threads):
     subprocess.run(shlex.split(full_cmd))
     
     isoform_df = pd.read_csv(output_prefix.joinpath(f'{input_vtx.stem}_{fasta_file.stem}_alignments.m8'), sep='\t', names=options.split()[1].split(','))
-    isoform_df = isoform_df[(isoform_df['pident'] == 100.0)]
+    isoform_df = isoform_df[(isoform_df['pident'] >= 90)]
     isoform_df.drop_duplicates(inplace=True)
 
     refseq_isoform_df = isoform_df.groupby('query').aggregate(list)
