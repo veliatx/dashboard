@@ -1,5 +1,6 @@
 import py3Dmol
 
+import inspect
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -10,21 +11,39 @@ import streamlit_scrollable_textbox as stx
 from streamlit_echarts import st_echarts
 
 from dashboard import plotting, description, data_load, util
-from dashboard.etl import DATA_DIR, CACHE_DIR
+from dashboard.etl import DATA_DIR, CACHE_DIR, DB_CONNECTION_STRING, REDSHIFT_CONNECTION_STRING
 
-import sqlite3
+from expression_atlas_db import base, queries
+
+from multiplealignment import plotting_tools 
+
+# # Auto-wrap all the query functions in st.cache_data. 
+
+# for name, f in inspect.getmembers(queries, inspect.isfunction):
+#     setattr(
+#         queries, 
+#         name, 
+#         st.cache_data(f, ttl='1h', hash_funcs={
+#             'sqlalchemy.orm.session._Session': lambda _: None,
+#             'sqlalchemy.orm.attributes.InstrumentedAttribute': lambda _: None,
+#             'builtins.function': lambda _: None,
+#             },
+#         ),
+#     )
 
 def sorf_details(sorf_df):
+
+    Session = base.configure(DB_CONNECTION_STRING)
+    SessionRedshift = base.configure(REDSHIFT_CONNECTION_STRING)
+
     st.title('sORF Table')
     
-    filter_option = st.selectbox('Pre-filtered sORFs:', ('Ribo-Seq sORFs',
-                                                        'Secreted',
-                                                        'Secreted & Novel',
-                                                        'Secreted & Conserved',
-                                                        'Secreted & Conserved & Novel',
-                                                        'Translated',
-                                                        'Translated & Conserved',
-                                                        'All sORFs'), index = 0, key='sorf_detail_filter')
+    filter_option = st.selectbox('Pre-filtered sORFs:', 
+                                    ('Secreted',
+                                     'Secreted & Novel',
+                                     'Secreted & Conserved',
+                                     'Secreted & Conserved & Novel',
+                                     ), index = 0, key='sorf_detail_filter_5')
     
     df = util.filter_dataframe_preset(sorf_df, filter_option)
 
@@ -91,7 +110,9 @@ def sorf_details(sorf_df):
         xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
 
         value = None
-        with st.expander("Transcription Data", expanded=True):
+        with st.expander("Transcription Data", expanded=True), \
+            Session.begin() as session, \
+            SessionRedshift.begin() as session_redshift:
             col1, col2 = st.columns(2)
 
             with col1:
@@ -111,31 +132,43 @@ def sorf_details(sorf_df):
                                        )
                 else:
                     st.write('No transcripts in TCGA/GTEx/TARGET found containing this sORF')
+                    value_tcga = None
                     
                 st.title('Autoimmune Expression Atlas')
                 title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
                 
                 formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
-                sql_query = f"SELECT * FROM transcript_tpm WHERE transcript_tpm.transcript_id IN ({formatted_ids});"
-                selected_expression_ai = pd.read_sql(sql_query, sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db'))).fillna(0.01)
-                selected_expression_ai_ave = selected_expression_ai.pivot_table(index='group',
-                                                                        columns='transcript_id',
-                                                                        values='tpm', 
-                                                                        aggfunc=np.nanmedian).fillna(0.01)#.apply(lambda x: np.log2(x+1))
-                sample_sizes = selected_expression_ai['group'].value_counts()
-                selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
-                echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
+                
+                if len(selected_transcripts) > 0:
+                    selected_expression_ai = queries.query_samplemeasurement(
+                                                                    session, 
+                                                                    session_redshift, 
+                                                                    sequenceregions=selected_transcripts.tolist(),
+                                                                )
+                    selected_expression_ai_ave = selected_expression_ai.pivot_table(
+                                                                    index='atlas_group',
+                                                                    columns='transcript_id',
+                                                                    values='tpm', 
+                                                                    aggfunc=np.nanmedian,
+                                                                ).fillna(0.01)#.apply(lambda x: np.log2(x+1))
+                    sample_sizes = selected_expression_ai['atlas_group'].value_counts()
+                    selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
+                    echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
-                if echart_option_ai:
-                    value_ai = st_echarts(echart_option_ai,
+                
+                    if echart_option_ai:
+                        value_ai = st_echarts(echart_option_ai,
                                        height="900px",
                                        events=events_ai,
                                        renderer='svg',
                                        key = 'ai_echart_heatmap_explorer'
                                        )
-                else:
+                    else:
+                        value_ai = None
+                else:    
                     st.write('No transcripts in Velia Autoimmune Atlas found containing this sORF')
+                    value_ai = None
 
             with col2:
 
@@ -157,10 +190,19 @@ def sorf_details(sorf_df):
                         selected_transcript_ai = value_ai
                     else:
                         selected_transcript_ai = selected_transcripts[0]
-                    db_address = DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')
-                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(util.query_de_transcripts(selected_transcript_ai, db_address).fillna(0.01),
-                                                                                 f'Autoimmune DE - {selected_transcript_ai}',
-                                                                                 db_address)
+                    
+                    bar_plot_ai_df = queries.query_differentialexpression(
+                                                                    session, 
+                                                                    session_redshift, 
+                                                                    sequenceregions=[selected_transcript_ai],
+                                                                ).fillna(0.01)
+
+                    bar_plot_ai_df.rename({'contrast_name':'contrast','velia_id':'velia_study'}, axis=1, inplace=True)
+                    
+                    option_ai_de = plotting.bar_plot_expression_group_autoimmune(
+                            bar_plot_ai_df,
+                            f'Autoimmune DE - {selected_transcript_ai}',
+                        )
                     st_echarts(options=option_ai_de, key='c', height='900px', width = '650px', renderer='svg')
                     
             if (len(xena_overlap) > 0) and value_tcga:
@@ -173,11 +215,16 @@ def sorf_details(sorf_df):
                     None
                     
             if (len(selected_transcripts) > 0) and value_ai:    
-                fig_ai = px.box(data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai].sort_values('group').rename({'tpm': selected_transcript_ai}, axis=1),
-                    x='group', points = 'all',
-                    y=selected_transcript_ai, height=500,
-                    width=800 
-                )
+                fig_ai = px.box(
+                            data_frame = selected_expression_ai[selected_expression_ai['transcript_id']==selected_transcript_ai]
+                                .sort_values('atlas_group')
+                                .rename({'tpm': selected_transcript_ai}, axis=1),
+                            x='atlas_group', 
+                            points = 'all',
+                            y=selected_transcript_ai, 
+                            height=500,
+                            width=800,
+                        )
                 st.plotly_chart(fig_ai, use_container_width=True)
 
 
@@ -197,6 +244,7 @@ def sorf_details(sorf_df):
                     col3.altair_chart(achart, use_container_width=False)
                             
                 with col4:
+                    st.download_button('Download PDB Structure', structure, file_name = f"{vtx_id}.pdb")
                     modified_structure_colors = plotting.color_protein_terminal_ends(sorf_aa_seq, structure)
                     view = py3Dmol.view(js='https://3dmol.org/build/3Dmol.js',)
                     view.addModel(modified_structure_colors, 'pdb')
@@ -213,6 +261,27 @@ def sorf_details(sorf_df):
             st.header('AA Feature Predictions', help=description.amino_acid_features_hover_text)
             st.altair_chart(altair_signal_features_fig, use_container_width=True)
 
+        with st.expander("HMMER results", expanded=True):
+
+            hmmer_df = data_load.load_hmmer_results(vtx_id)
+            if not isinstance(hmmer_df, pd.DataFrame):
+                st.write('HMMER search not available for this microprotein. :slightly_frowning_face:')
+            elif hmmer_df['species__display'].values[0].size == 1:
+                st.write('Only query sequence found. No informative conservation information available. :slightly_frowning_face:')
+            else:
+                st.header('Conservation Features', help=description.hmmer_meta_features_text)
+                if st.toggle('Trimmed Alignment', value=True):
+                    fit_hmmer = plotting_tools.alignment_heatmap_with_meta(
+                        hmmer_df,
+                        alignment_key='alignment__display',
+                    )
+                else:
+                    fit_hmmer = plotting_tools.alignment_heatmap_with_meta(
+                        hmmer_df,
+                        alignment_key='untrimmed_alignment__display',
+                    )
+                st.plotly_chart(fit_hmmer, use_container_width=True)
+
         
         with st.expander("BLASTp results", expanded=True):
             # Blastp Mouse
@@ -227,3 +296,5 @@ def sorf_details(sorf_df):
                     long_text+= h['alignment'] + '  \n  \n'
     
             stx.scrollableTextbox(long_text, height = 300, fontFamily='Courier')
+        
+        

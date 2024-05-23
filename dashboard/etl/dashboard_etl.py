@@ -71,9 +71,9 @@ def parse_phobius(data, id_to_sequence):
     return {k: {'string_rep': phobius_format_conversion(v, k)} for k, v in groups.items()}
 
 def parse_deeptmhmm(input_file):
-    lines = input_file.get_data().decode().split('\n')
-    # with open(input_file, 'r') as fh:
-        # lines = [i.strip() for i in fh.readlines()]
+    # lines = input_file.get_data().decode().split('\n')
+    with open(input_file, 'r') as fh:
+        lines = [i.strip() for i in fh.readlines()]
     entry_indexes = [ix for ix, l in enumerate(lines) if l.startswith('>')]
     results = {}
     for ix in entry_indexes:
@@ -108,6 +108,7 @@ def parse_signalp6(input_file, id_to_sequence):
 def parse_signalp5(input_file, id_to_sequence):
     lines = pd.read_table(input_file, skiprows=2, names=['ID', 'Prediction', 'score', 'OTHER', 'cut_site'])
     lines.fillna(-1, inplace=True)
+    lines['ID'] = [str(i) for i in lines['ID']]
     results = {}
     pattern = r"CS pos: (\d+)"
     for ix, row in lines.iterrows():
@@ -179,16 +180,15 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
     input_filename = pathlib.Path(INPUT_FASTA_FILE).parts[-1]
     seqs = {k: str(v.seq) for k, v in SeqIO.to_dict(SeqIO.parse(INPUT_FASTA_FILE, 'fasta')).items()}
     
-    # Phobius
+    # # Phobius
     phobius_exec = f"docker run -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/secretions_tools:latest phobius -long /data/{input_filename}"
     phobius_data = subprocess.check_output(shlex.split(phobius_exec)).decode()
+    with open(f'{OUTPUT_PREFIX}/phobius.results.txt', 'w') as fopen:
+        fopen.write(phobius_data)
     
-    #DeepTMHMM
-    deeptmhmm = biolib.load('DTU/DeepTMHMM')
-    biolib.utils.STREAM_STDOUT = True # Stream progress from app in real time
-    # os.environ["BIOLIB_DOCKER_RUNTIME"] = 'nvidia'
-    deeptmhmm_job = deeptmhmm.cli(args=f'--fasta {INPUT_FASTA_FILE}', machine='local') # Blocks until done
-    deeptmhmm_job.save_files(OUTPUT_PREFIX) # Saves all results to `result` dir
+    
+    # #DeepTMHMM
+    os.system(f"BIOLIB_DOCKER_RUNTIME=nvidia biolib run --local DTU/DeepTMHMM --fasta {INPUT_FASTA_FILE}")
     
     # SignalP6 slow
     source_weight_dir = "/efs/models/signalp6"
@@ -204,17 +204,22 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
     # SignalP 4.1
     cmd = f"docker run --gpus all -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/secretions_tools:latest signalp -f long -t euk /data/{input_filename}"
     signalp41_data = subprocess.check_output(shlex.split(cmd)).decode()
-    # os.system(f'mv signalp41.results {OUTPUT_PREFIX}/signalp41.results')
+    with open(f'{OUTPUT_PREFIX}/signalp41.results.txt', 'w') as fopen:
+        fopen.write(signalp41_data)
     
     #DeepSig
     cmd = f"docker run --gpus all --rm -v {OUTPUT_PREFIX}:/data bolognabiocomp/deepsig -f /data/{input_filename} -o /data/deepsig.results -k euk -m json"
     subprocess.run(shlex.split(cmd))
     
     # Parse results
+    with open(f'{OUTPUT_PREFIX}/phobius.results.txt', 'r') as fopen:
+        phobius_data = ''.join(fopen.readlines())
     phobius_results = parse_phobius(phobius_data, seqs)
-    deep_tmhmm_results = parse_deeptmhmm(deeptmhmm_job.get_output_file('predicted_topologies.3line'))
+    deep_tmhmm_results = parse_deeptmhmm(f'{OUTPUT_PREFIX}/biolib_results/predicted_topologies.3line')
     signalp_6_results = parse_signalp6(f'{OUTPUT_PREFIX}/output.json', seqs)
     signalp_5_results = parse_signalp5(f'{OUTPUT_PREFIX}/results_summary.signalp5', seqs)
+    with open(f'{OUTPUT_PREFIX}/signalp41.results.txt', 'r') as fopen:
+        signalp41_data = ''.join(fopen.readlines())
     signalp_41_results = parse_signalp41(signalp41_data, seqs)
     deepsig_results = parse_deepsig(f'{OUTPUT_PREFIX}/deepsig.results', seqs)
 

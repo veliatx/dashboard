@@ -9,7 +9,7 @@ import streamlit as st
 import sqlite3
 
 from dashboard.util import convert_list_string
-from dashboard.etl import CACHE_DIR, DATA_DIR, NOTEBOOK_DATA_DIR
+from dashboard.etl import CACHE_DIR, DATA_DIR, HMMER_S3_LOC, NOTEBOOK_DATA_DIR
 
 from ast import literal_eval
 from collections import defaultdict
@@ -24,18 +24,34 @@ def load_autoimmune_atlas():
     return meta
 
 @st.cache_data()
-def load_autoimmune_contrasts():
+def load_autoimmune_metadata():
 
     """
     Temporary table for joining contrasts from the autoimmune studies to specific samples.
     To be replaced by table in autoimmune sqlitedb.
     """
-    db = sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db'))
-    contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", db)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+    with sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')) as sqliteConnection:
+        contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", sqliteConnection)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+        sample_meta_df = pd.read_sql(
+                                f"""SELECT
+                                        sample_id, 
+                                        sample_condition_1,
+                                        sample_condition_2,
+                                        sample_condition_3,
+                                        sample_type_1,
+                                        sample_type_2
+                                    FROM sample_metadata""",
+                                sqliteConnection,
+                            )
+            
     contrast_samples.index = contrast_samples.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
     contrast_samples.index.name = 'study -- contrast'
-    db.close()
-    return contrast_samples
+    contrast_samples['display'] = contrast_samples.apply(
+                                    lambda x: f"{x.velia_study} -- " +
+                                        f"{x.contrast.upper().split('VS')[0 if x.contrast_side == 'left' else 1].strip('_')}", 
+                                    axis=1,
+                                    )
+    return contrast_samples, sample_meta_df
 
 @st.cache_data()
 def load_sorf_df_conformed():
@@ -44,17 +60,43 @@ def load_sorf_df_conformed():
     df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
     df.drop('nonsignal_seqs', axis=1, inplace=True)
     #df = df[df['aa_length'] <= 150].copy()
-
+    
     df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb or something
     
     df = add_temp_isoform_info(df) # Converted to use ETL format
-
+    
     df = add_temp_tblastn_info(df) # Uses ETL Version
 
-    # df = add_temp_riboseq_info(df) # Moved to update_cache.py
-    
-    df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
+    # TODO: These are getting filtered because Ribo-Seq sORF is not flagged for these transcripts. 
+    keep_vtx_no_translated = \
+    """VTX-0850289
+    VTX-0087278
+    VTX-0774612
+    VTX-0850643
+    VTX-0851353
+    VTX-0060798
+    VTX-0850465
+    VTX-0069174
+    VTX-0699909
+    VTX-0852737
+    VTX-0851971
+    VTX-0851127
+    VTX-0850174
+    VTX-0850841
+    VTX-0852738
+    VTX-0851309
+    VTX-0826742
+    VTX-0852041
+    VTX-0015094
+    VTX-0851455
+    VTX-0087278"""
+    keep_vtx_no_translated = df['vtx_id'].isin([v.strip() for v in keep_vtx_no_translated.split('\n')])
+    df.loc[keep_vtx_no_translated, 'screening_phase'] = 'TEMPORARY_KEEP'
 
+    df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
+    
+    df = add_temp_gwas(df)
+    
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
     feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
@@ -72,6 +114,11 @@ def load_sorf_df_conformed():
     
     df[['start', 'end']] = df[['start', 'end']].astype(int)
 
+
+    signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
+    measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
+    df = df[measured_secreted_or_predicted_secreted]
+     
     return df
 
 
@@ -96,9 +143,20 @@ def reorder_table_cols(df):
         'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
         'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
         'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
-        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity']
+        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity',
+        'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
     
     return df[view_cols]
+
+
+def add_temp_gwas(df):
+    """
+    """
+    sorf_gwas_df = pd.read_csv(DATA_DIR.joinpath('embl_nhgri_gwas_v1.0.2.dashboard_sorfs.tsv'), sep='\t')
+    agg_df = sorf_gwas_df[['vtx_id', 'SNPS', 'MAPPED_TRAIT', 'P-VALUE']].groupby('vtx_id').aggregate(list)
+    df = df.merge(agg_df, left_index=True, right_index=True, how='left')
+    
+    return df
 
 
 def add_temp_nonsig_cons_info(df):
@@ -140,21 +198,6 @@ def add_temp_feature_info(df):
     df['vtx_id'] = df.index
 
     return df
-
-
-# def add_temp_riboseq_info(df):
-#     """
-#     """
-#     from dashboard.tabs.riboseq_atlas import get_average_coverage
-#     ribo_df = get_average_coverage()
-#     vtx_with_any_support = ribo_df[(ribo_df.sum(axis=1)>50) & (ribo_df.max(axis=1)>10)].index
-#     array_to_add = ['True' if i in vtx_with_any_support else 'False' for i in df.index]
-#     df['Ribo-Seq RPKM Support'] = array_to_add
-    
-#     df.index.name = 'vtx_id'
-#     df['vtx_id'] = df.index
-
-#     return df
 
 
 def add_temp_tblastn_info(df):
@@ -228,10 +271,12 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase6_public_mass_spec' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_orfrater' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase9_Olsen' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
         (df['screening_phase'] == 'Not Screened') |
-        (df['orf_xrefs'].astype(str).str.contains('RibORF')))
+        (df['orf_xrefs'].astype(str).str.contains('RibORF')) | 
+        (df['screening_phase'] == 'TEMPORARY_KEEP')) 
     
     ribo_df = df[df['Ribo-Seq sORF']].copy()
     x = ribo_df.groupby('aa').aggregate(list)
@@ -338,3 +383,12 @@ def load_phylocsf_data():
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
     return pcsf
+
+@st.cache_data()
+def load_hmmer_results(vtx_id, hmmer_loc=HMMER_S3_LOC):
+    """
+    """
+    try:
+        return pd.read_parquet(f'{hmmer_loc}{vtx_id}.parq')
+    except FileNotFoundError as e:
+        return 
