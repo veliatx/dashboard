@@ -138,32 +138,35 @@ def sorf_details(sorf_df):
                 title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
                 
                 formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
-            
-                selected_expression_ai = queries.query_samplemeasurement(
+                
+                if len(selected_transcripts) > 0:
+                    selected_expression_ai = queries.query_samplemeasurement(
                                                                     session, 
                                                                     session_redshift, 
                                                                     sequenceregions=selected_transcripts.tolist(),
                                                                 )
-                selected_expression_ai_ave = selected_expression_ai.pivot_table(
+                    selected_expression_ai_ave = selected_expression_ai.pivot_table(
                                                                     index='atlas_group',
                                                                     columns='transcript_id',
                                                                     values='tpm', 
                                                                     aggfunc=np.nanmedian,
                                                                 ).fillna(0.01)#.apply(lambda x: np.log2(x+1))
-                sample_sizes = selected_expression_ai['atlas_group'].value_counts()
-                selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
-                echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
+                    sample_sizes = selected_expression_ai['atlas_group'].value_counts()
+                    selected_expression_ai_ave.index = [f"{x} n={sample_sizes[x]}" for x in selected_expression_ai_ave.index]
+                    echart_option_ai, events_ai = plotting.expression_heatmap_plot(title,
                                                                                selected_expression_ai_ave,
                                                                                median_groups=False)
                 
-                if echart_option_ai:
-                    value_ai = st_echarts(echart_option_ai,
+                    if echart_option_ai:
+                        value_ai = st_echarts(echart_option_ai,
                                        height="900px",
                                        events=events_ai,
                                        renderer='svg',
                                        key = 'ai_echart_heatmap_explorer'
                                        )
-                else:
+                    else:
+                        value_ai = None
+                else:    
                     st.write('No transcripts in Velia Autoimmune Atlas found containing this sORF')
                     value_ai = None
 
