@@ -161,7 +161,7 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
     is_not_isoform = df[isoform_cols].apply(lambda x: [not i=='None' for i in x]).max(axis=1)==0
     
-    if filter_option == 'Ribo-Seq sORFs':
+    if filter_option == 'Secreted & Transmembrane':
         df = df[df['Ribo-Seq sORF']]
 
     elif filter_option == 'Secreted':
@@ -180,21 +180,24 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     elif filter_option == 'Secreted & Conserved & Novel':
         df = df[(df['Ribo-Seq sORF']) & \
                 measured_secreted_or_predicted_secreted & \
-               is_not_isoform & \
+                is_not_isoform & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
-    elif filter_option ==  'Translated':
+    elif filter_option ==  'Transmembrane':
         df = df[(df['Ribo-Seq sORF']) & \
-                (df[signal_cols] < 0).all(axis=1)]
+                ~measured_secreted_or_predicted_secreted & \
+                (df['DeepTMHMM_prediction'])]
 
-    elif filter_option ==  'Translated & Conserved':
+    elif filter_option ==  'Transmembrane & Conserved':
         df = df[(df['Ribo-Seq sORF']) & \
-                (df[signal_cols] < 0).all(axis=1) & \
+                ~measured_secreted_or_predicted_secreted & \
+                (df['DeepTMHMM_prediction']) & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
         
-    elif filter_option ==  'Translated & Conserved & Novel':
+    elif filter_option ==  'Transmembrane & Conserved & Novel':
         df = df[(df['Ribo-Seq sORF']) & \
-                (df[signal_cols] < 0).all(axis=1) & \
+                ~measured_secreted_or_predicted_secreted & \
+                (df['DeepTMHMM_prediction']) & \
                 is_not_isoform & \
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
 
