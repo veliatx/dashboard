@@ -34,6 +34,7 @@ import subprocess
 import sqlite3
 import sys
 
+
 def configure_logger(log_file=None, level=logging.INFO, overwrite_log=True,
                      format=logging.BASIC_FORMAT):
     """
@@ -78,12 +79,12 @@ def get_genome_reference(bucket_name, s3_file_key):
     return genome_reference
 
 
-def helper_function(arg, extra_arg):
-    return pfunc(arg, extra_arg)
+def helper_function(arg):#, extra_arg):
+    return pfunc(arg)#, extra_arg)
 
 
-def pfunc(i, genome_reference):
-        r = parallel_sorf_query(i, genome_reference)
+def pfunc(i):
+        r = parallel_sorf_query(i)#, genome_reference)
         return r
 
 @click.command()
@@ -127,7 +128,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
     bucket_name = 'velia-annotation-dev'
     s3_file_key = 'genomes/hg38/GRCh38.p13.genome.fa.gz'
     logging.info('Loading hg38 genome')
-    genome_reference = get_genome_reference(bucket_name, s3_file_key)
+    #genome_reference = get_genome_reference(bucket_name, s3_file_key)
 
     if cache_dir.exists() and not overwrite and not resume:
         logging.info(f'Cache directory {cache_dir} exists and overwrite and resume are set to false')
@@ -143,23 +144,22 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
         cache_dir.joinpath('protein_data').mkdir()
 
     with open(vtx_ids_file) as fhandle:
-        ids = [int(i.replace('VTX-', '')) for i in fhandle.readlines()]
-        ids = list(set(ids))
+        ids = list(set([i.rstrip('\n') for i in fhandle.readlines()]))
 
     sorfs_json_exists = cache_dir.joinpath('sorf_table.jsonlines').exists()
     if overwrite or not sorfs_json_exists:
         # Query DB
         logging.info("Query Orf Table")
         session = base.Session() 
-        orfs = session.query(Orf).filter(Orf.id.in_(ids)).all()
-        missing_orfs = set(ids) - set([i.id for i in orfs])
+        orfs = session.query(Orf).filter(Orf.vtx_id.in_(ids)).all()
+        missing_orfs = set(ids) - set([i.vtx_id for i in orfs])
         
         if len(missing_orfs) > 0:
             logging.info('WARNING: some of the provided IDs were not found in veliadb.', *missing_orfs)
         with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
             with mp.Pool(number_threads) as ppool:
-                func = functools.partial(helper_function, extra_arg=genome_reference)
-                for r in tqdm(ppool.imap(func, ids, chunksize=number_threads), total=len(ids)):
+                #func = functools.partial(helper_function)#, extra_arg=genome_reference)
+                for r in tqdm(ppool.imap(pfunc, ids, chunksize=100), total=len(ids)):
                     fopen.write(json.dumps(r))
                     fopen.write('\n')
 
@@ -167,7 +167,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
 
     sorf_df = load_jsonlines_table(cache_dir.joinpath('sorf_table.jsonlines'), index_col='vtx_id')
     
-    del genome_reference
+    #del genome_reference
 
     # Format table to conform to standardized entries
     session = base.Session()

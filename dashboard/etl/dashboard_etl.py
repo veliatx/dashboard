@@ -174,44 +174,44 @@ def parse_deepsig(input_file, id_to_sequence):
     return results
 
 def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8):
-    #     # Parse the arguments
+    ## Parse the arguments
 
     os.makedirs(OUTPUT_PREFIX, exist_ok=True)
     input_filename = pathlib.Path(INPUT_FASTA_FILE).parts[-1]
     seqs = {k: str(v.seq) for k, v in SeqIO.to_dict(SeqIO.parse(INPUT_FASTA_FILE, 'fasta')).items()}
     
-    # # Phobius
+    ## Phobius
     phobius_exec = f"docker run -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/secretions_tools:latest phobius -long /data/{input_filename}"
     phobius_data = subprocess.check_output(shlex.split(phobius_exec)).decode()
     with open(f'{OUTPUT_PREFIX}/phobius.results.txt', 'w') as fopen:
         fopen.write(phobius_data)
     
-    
-    # #DeepTMHMM
+    ## DeepTMHMM
     os.system(f"BIOLIB_DOCKER_RUNTIME=nvidia biolib run --local DTU/DeepTMHMM --fasta {INPUT_FASTA_FILE}")
-    
-    # SignalP6 slow
+    os.system(f"mv biolib_results {OUTPUT_PREFIX}/biolib_results")
+
+    ## SignalP6 slow
     source_weight_dir = "/efs/models/signalp6"
     dest_weight_dir = "/home/jupyter-rob:/usr/local/lib/python3.8/dist-packages/signalp/model_weights"
     cmd = f"docker run --gpus all --rm -v /efs/models/signalp6:/usr/local/lib/python3.8/dist-packages/signalp/model_weights -v {OUTPUT_PREFIX}:/home/work streptomyces/signalp signalp6 --fastafile /home/work/{input_filename} --output_dir /home/work --mode slow --bsize 200 --format txt --organism eukarya"
     subprocess.run(shlex.split(cmd))
     subprocess.run(shlex.split(f'rm -f {OUTPUT_PREFIX}/output_*plot.txt'))
     
-    #SignalP 5.0b
+    ## SignalP 5.0b
     cmd = f"docker run --gpus all --rm -v {OUTPUT_PREFIX}:/home/work streptomyces/signalp signalp -fasta /home/work/{input_filename} -format short -org euk -plot png -prefix /home/work/results"
     subprocess.run(shlex.split(cmd))
     
-    # SignalP 4.1
+    ## SignalP 4.1
     cmd = f"docker run --gpus all -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/secretions_tools:latest signalp -f long -t euk /data/{input_filename}"
     signalp41_data = subprocess.check_output(shlex.split(cmd)).decode()
     with open(f'{OUTPUT_PREFIX}/signalp41.results.txt', 'w') as fopen:
         fopen.write(signalp41_data)
     
-    #DeepSig
+    ## DeepSig
     cmd = f"docker run --gpus all --rm -v {OUTPUT_PREFIX}:/data bolognabiocomp/deepsig -f /data/{input_filename} -o /data/deepsig.results -k euk -m json"
     subprocess.run(shlex.split(cmd))
     
-    # Parse results
+    ## Parse results
     with open(f'{OUTPUT_PREFIX}/phobius.results.txt', 'r') as fopen:
         phobius_data = ''.join(fopen.readlines())
     phobius_results = parse_phobius(phobius_data, seqs)
@@ -271,12 +271,6 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
     
     cmd = f'docker run --gpus all -it -v {os.path.dirname(os.path.abspath(__file__))}:/opt/openfold -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/esmfold:latest python /opt/openfold/run_batch_fasta.py /data/{input_filename} /data/esmfold.jsonlines'
     subprocess.run(shlex.split(cmd))
-
-
-
-
-
-
 
 
 if __name__ == '__main__':

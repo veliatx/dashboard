@@ -17,13 +17,15 @@ from sqlalchemy import and_, or_
 
 from veliadb import base
 from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
-                          TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref)
+                          TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref,
+                          TranscriptXref)
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
     
+"""
 def extract_nucleotide_sequence_veliadb(o, genome_seq):
     seqs = []
     blocks = [int(x) for x in o.block_sizes.split(';')]
@@ -44,7 +46,7 @@ def extract_nucleotide_sequence_veliadb(o, genome_seq):
         seqs.reverse()
     seq = ''.join(seqs)     
     return seq, str(Seq(seq).translate())
-
+"""
 
 current_folder = pathlib.Path(__file__).parents[0]
 # Function to parse the FASTA content
@@ -60,27 +62,30 @@ with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcri
     transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
 
-def parallel_sorf_query(vtx_id, genome_reference):
+def parallel_sorf_query(vtx_id):#, genome_reference):
     # Query DB
     session = base.Session() # connect to db
     try:
-        orf = session.query(Orf).filter(Orf.id == vtx_id).one()
+        orf = session.query(Orf).filter(Orf.vtx_id == vtx_id).one()
     except Exception as e:
         print(e)
     
-    if orf.start != -1 and orf.nt_seq == '' or orf.aa_seq == '':
-        try:
-            nt_reconstructed, aa_reconstructed = extract_nucleotide_sequence_veliadb(orf, genome_reference)
-            aa_reconstructed = aa_reconstructed.strip('*')
-        except:
-            print(f'Could not extract sequence for {vtx_id}')
-            if orf.aa_seq == '':
-                print(f'No registered AA seq')
-                return
-    else:
-        nt_reconstructed = orf.nt_seq
-        aa_reconstructed = orf.aa_seq
-        
+    #if orf.start != -1 and orf.nt_seq == '' or orf.aa_seq == '':
+    #    try:
+    #        nt_reconstructed, aa_reconstructed = extract_nucleotide_sequence_veliadb(orf, genome_reference)
+    #        aa_reconstructed = aa_reconstructed.strip('*')
+    #    except:
+    #        print(f'Could not extract sequence for {vtx_id}')
+    #        if orf.aa_seq == '':
+    #            print(f'No registered AA seq')
+    #            return
+    #else:
+    #    nt_reconstructed = orf.nt_seq
+    #    aa_reconstructed = orf.aa_seq
+    
+    nt_reconstructed = orf.nt_seq
+    aa_reconstructed = orf.aa_seq
+    
     if orf.nt_seq == nt_reconstructed:
         nt = orf.nt_seq
     elif orf.nt_seq == '':
@@ -98,12 +103,12 @@ def parallel_sorf_query(vtx_id, genome_reference):
 
     aa = aa.strip('*')
 
-    r_internal = find_seq_substring(nt, transcripts)
-    transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
+    #r_internal = find_seq_substring(nt, transcripts)
+    #transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
     # overlapping_tids = query_overlapping_transcripts(current_orf, session)
     # overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
     attributes = parse_orf(orf, session)
-    attributes['transcripts_exact'] = transcripts_exact
+    #attributes['transcripts_exact'] = transcripts_exact
     # attributes['transcripts_overlapping'] = overlapping_tids
     # if attributes['aa'] == '':
     attributes['aa'] = aa.replace('*', '')
@@ -138,7 +143,7 @@ def parse_orf(orf, session):
         genscript_id = match.group()
     else:
         genscript_id = ""
-    vtx_id = f'VTX-{orf.id:07d}'
+    vtx_id = orf.vtx_id
     chrom = orf.assembly.ucsc_style_name
     strand = orf.strand
     start = str(orf.start)
@@ -146,33 +151,30 @@ def parse_orf(orf, session):
     chrom_starts = orf.chrom_starts
     block_sizes = orf.block_sizes
     phases = orf.phases
-    seqs = orf.aa_seq
+    seqs = orf.aa_seq.rstrip('*')
+
     source = ';'.join(set([x.orf_data_source.name for x in orf.xref]))
         
     ucsc_track = f'{orf.assembly.ucsc_style_name}:{orf.start}-{orf.end}'
 
-    gene_ids = [g.id for g in session.query(Gene).filter(and_(Gene.assembly_id == orf.assembly_id,
-                                                              Gene.strand == orf.strand,
-                                                              Gene.start < orf.start,
-                                                              Gene.end > orf.end)).all()]
+    transcript_ids = list(set([t.transcript_id for t in session.query(TranscriptOrf).filter(TranscriptOrf.orf_id == orf.id).all()]))
+    transcript_xrefs = ';'.join([sx.xref for sx in session.query(TranscriptXref).filter(TranscriptXref.transcript_id.in_(transcript_ids)).all()])
+    exact_transcripts = [t for t in session.query(Transcript).filter(Transcript.id.in_(transcript_ids)).all() if t.ensembl_id != '']    
     
-    gene_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(gene_ids)).all()])
-    
-    
-    transcript_ids = [t.id for t in session.query(Transcript).filter(and_(Transcript.assembly_id == orf.assembly_id,
-                                                                          Transcript.strand == orf.strand,
-                                                                          Transcript.start < orf.start,
-                                                                          Transcript.end > orf.end)).all()]
-    
-    transcript_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(transcript_ids)).all()])
     protein_xrefs = ';'.join([str(px.xref) for px in \
                          session.query(ProteinXref)\
                                 .join(Protein, Protein.id == ProteinXref.protein_id)\
                                 .filter(Protein.aa_seq == seqs).all()])
+    
+    gene_ids = set([t.gene.id for t in exact_transcripts])
+    exact_transcript_ids = [t.ensembl_id.split('.')[0] for t in exact_transcripts]
+
+    gene_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(gene_ids)).all()])
+    
+    
     return {
         'vtx_id': vtx_id,
         'genscript_id': genscript_id,
-        'velia_id': orf.velia_id,
         'secondary_id': orf.secondary_orf_id,
         'ucsc_track': ucsc_track,
         'chr': chrom,
@@ -187,16 +189,17 @@ def parse_orf(orf, session):
         'orf_xrefs': orf_xrefs,
         'gene_xrefs': gene_xrefs,
         'transcript_xrefs': transcript_xrefs,
+        'transcripts_exact': exact_transcript_ids,
         'protein_xrefs': protein_xrefs,
         'source': source
     }
 
 
-def find_seq_substring(query, target_dict):
-    if query == '':
-        return []
-    else:
-        return [k for k, s in target_dict.items() if query.lower() in s]
+#def find_seq_substring(query, target_dict):
+#    if query == '':
+#        return []
+#    else:
+#        return [k for k, s in target_dict.items() if query.lower() in s]
 
 #if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
 #    with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
@@ -210,10 +213,12 @@ def find_seq_substring(query, target_dict):
 #                                       o.assembly_id == Transcript.assembly_id)).all()
 #     return results
 
+"""
 def compute_exact_transcript_matches(o):
     nt, aa = extract_nucleotide_sequence_veliadb(o, reference)
     r_internal = find_seq_substring(nt, transcripts)
     return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r_internal]
+
 
 def run_id_mapping_parallel(orfs, NCPU = 1):
     import multiprocessing as mp
@@ -229,7 +234,7 @@ def run_id_mapping_parallel(orfs, NCPU = 1):
             r = compute_exact_transcript_matches(o)
             results[r[0]] = r[1:]
     return results
-
+"""
 
 def load_jsonlines_table(path_to_file, index_col = None):
     with open(path_to_file) as fh:
@@ -248,9 +253,9 @@ def parse_sorf_phase(sorf_df, session):
     phase_ids = []
     phase_entries = []
     for row in sorf_df.itertuples():
-        if row.velia_id.startswith('Phase'):
-            phase_ids.append(row.velia_id)
-            phase_entries.append(f'Phase {row.velia_id[6]}')
+        if row.vtx_id.startswith('Phase'):
+            phase_ids.append(row.vtx_id)
+            phase_entries.append(f'Phase {row.vtx_id[6]}')
         elif row.secondary_id.startswith('Phase'):
             phase_ids.append(row.secondary_id)
             phase_entries.append(f'Phase {row.secondary_id[6]}')
@@ -258,19 +263,20 @@ def parse_sorf_phase(sorf_df, session):
             phase_id = [x for x in row.orf_xrefs if x.startswith('Phase')][0]
             phase_ids.append(phase_id)
             phase_entries.append(f'Phase {phase_id[6]}')
-        elif row.velia_id.startswith('smORF'):
-            phase_ids.append(row.velia_id)
+        elif row.secondary_id.startswith('smORF'):
+            phase_ids.append(row.vtx_id)
             phase_entries.append('Phase 1')
         else:
-            orf = session.query(Orf).filter(Orf.id == int(row.vtx_id.split('-')[1])).one()
+            orf = session.query(Orf).filter(Orf.vtx_id == row.vtx_id).one()
             
-            if orf.velia_id.startswith('Phase'):
-                phase_entries.append(f'Phase {orf.velia_id[6]}')
-                phase_ids.append(orf.velia_id)
+            if orf.secondary_orf_id.startswith('Phase'):
+                phase_entries.append(f'Phase {orf.vtx_id[6]}')
+                phase_ids.append(orf.vtx_id)
             else:
                 phase_entries.append('-1')
                 phase_ids.append('-1')
     return phase_ids, phase_entries
+
 
 def fix_missing_phase_ids(sorf_df):
     sorf_df = sorf_df.copy()
