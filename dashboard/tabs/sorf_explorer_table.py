@@ -143,12 +143,12 @@ def sorf_details(sorf_df):
                 title = f'Autoimmune Atlas Transcript Specific Expression - {vtx_id}'
                 
                 formatted_ids = ', '.join(f"'{id_}'" for id_ in selected_transcripts)
-                
                 if len(selected_transcripts) > 0:
                     selected_expression_ai = queries.query_samplemeasurement(
                                                                     session, 
                                                                     session_redshift, 
                                                                     sequenceregions=selected_transcripts.tolist(),
+                                                                    exact_id_match=False,
                                                                 )
                     selected_expression_ai_ave = selected_expression_ai.pivot_table(
                                                                     index='atlas_group',
@@ -200,6 +200,7 @@ def sorf_details(sorf_df):
                                                                     session, 
                                                                     session_redshift, 
                                                                     sequenceregions=[selected_transcript_ai],
+                                                                    exact_id_match=False,
                                                                 ).fillna(0.01)
 
                     bar_plot_ai_df.rename({'contrast_name':'contrast','velia_id':'velia_study'}, axis=1, inplace=True)

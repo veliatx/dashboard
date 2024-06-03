@@ -433,6 +433,7 @@ def de_page(sorf_df):
                                 studies=selected_df_boxplots['velia_study'].tolist(),
                                 contrasts=selected_df_boxplots['contrast'].tolist(),
                                 sequenceregions=[x[1] for x in selected_pts_ids],
+                                exact_id_match=False,
                             )
                             normed_counts_df.rename(
                                 {'velia_id':'velia_study', 'contrast_name':'contrast', 'srx_id':'sample_id'}, 
@@ -465,6 +466,7 @@ def de_page(sorf_df):
                                 log10_padj_threshold=None,
                                 log2_fc_threshold=None,
                                 mean_threshold=None,
+                                exact_id_match=False,
                             )
                             stats_df.rename({'velia_id':'velia_study','contrast_name':'contrast'}, axis=1, inplace=True)
                             stats_df[['left','right']] = stats_df['contrast'].str.upper().str.split('_VS_', expand=True)
