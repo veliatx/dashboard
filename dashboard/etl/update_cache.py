@@ -159,7 +159,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
         with open(cache_dir.joinpath('sorf_table.jsonlines'), 'w') as fopen:
             with mp.Pool(number_threads) as ppool:
                 #func = functools.partial(helper_function)#, extra_arg=genome_reference)
-                for r in tqdm(ppool.imap(pfunc, ids, chunksize=100), total=len(ids)):
+                for r in tqdm(ppool.imap(pfunc, ids, chunksize=10), total=len(ids)):
                     fopen.write(json.dumps(r))
                     fopen.write('\n')
 
@@ -222,7 +222,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
         protein_etl_script = __file__.replace('update_cache.py', 'dashboard_etl.py')
         cmd = f"python {protein_etl_script} -i {vtx_aa_fasta_path} -o {output_prefix_path}"
         logging.info(f'Running protein feature prediction tools {cmd}')
-        subprocess.run(shlex.split(cmd))
+#        subprocess.run(shlex.split(cmd))
         write_nonsignal_aa_sequences(output_prefix_path)
         fasta_write_veliadb_protein_sequences(output_prefix_path) # Writes fastas with reference protein sequences in cache
         logging.info(f'Running protein search tools {cmd}')
