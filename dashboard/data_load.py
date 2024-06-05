@@ -14,6 +14,9 @@ from dashboard.etl import CACHE_DIR, DATA_DIR, HMMER_S3_LOC, NOTEBOOK_DATA_DIR
 from ast import literal_eval
 from collections import defaultdict
 from pathlib import Path
+from veliadb import base
+from veliadb.base import Orf, OrfXref, Dataset
+
 
 @st.cache_data()
 def load_autoimmune_atlas():
@@ -61,11 +64,15 @@ def load_sorf_df_conformed():
     df.drop('nonsignal_seqs', axis=1, inplace=True)
     #df = df[df['aa_length'] <= 150].copy()
     
-    df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb or something
+    df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb
     
     df = add_temp_isoform_info(df) # Converted to use ETL format
     
     df = add_temp_tblastn_info(df) # Uses ETL Version
+
+    df = add_temp_source(df)
+
+    df = add_temp_hibit(df)
 
     # TODO: These are getting filtered because Ribo-Seq sORF is not flagged for these transcripts. 
     keep_vtx_no_translated = \
@@ -114,11 +121,10 @@ def load_sorf_df_conformed():
     
     df[['start', 'end']] = df[['start', 'end']].astype(int)
 
-
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
-    df = df[measured_secreted_or_predicted_secreted]
-     
+    df = df[(measured_secreted_or_predicted_secreted) | (df['DeepTMHMM_prediction'])]
+
     return df
 
 
@@ -156,6 +162,43 @@ def add_temp_gwas(df):
     agg_df = sorf_gwas_df[['vtx_id', 'SNPS', 'MAPPED_TRAIT', 'P-VALUE']].groupby('vtx_id').aggregate(list)
     df = df.merge(agg_df, left_index=True, right_index=True, how='left')
     
+    return df
+
+
+def add_temp_hibit(df):
+    """
+    """
+    df['nucl_no_stop'] = df.apply(lambda x: x.nucl[:-3], axis=1)
+
+    ph1to8_hit_df = pd.read_csv(DATA_DIR.joinpath('interim_phase1to8_all_20231012.csv'))
+    ph9_hit_df = pd.read_excel(DATA_DIR.joinpath('Ph9 hit list final.xlsx'), sheet_name='Secreted')
+
+    secreted_ph1to8_vtx = list(ph1to8_hit_df[ph1to8_hit_df['secreted']]['vtx_id'].values)
+    secreted_ph9_vtx = list(ph9_hit_df.merge(df, left_on='endogenous_nt_seq', right_on='nucl_no_stop')['vtx_id'].values)
+
+    secreted_vtx = set(secreted_ph1to8_vtx + secreted_ph9_vtx)
+
+    df['secreted'] = df.apply(lambda x: x.vtx_id in secreted_vtx or x['secreted'], axis=1)
+
+    return df
+
+
+def add_temp_source(df):
+    """
+    """
+    session = base.Session()
+    source_df = pd.DataFrame(session.query(Orf.vtx_id, Dataset.name).\
+                                     join(OrfXref, OrfXref.orf_id == Orf.id).\
+                                     join(Dataset, Dataset.id == OrfXref.xref_dataset_id).\
+                                     filter(Orf.vtx_id.in_(list(df['vtx_id']))).all())
+    source_df = source_df.groupby('vtx_id').aggregate(list)
+    source_df['source'] = source_df.apply(lambda x: list(set(x['name'])), axis=1)
+    df.drop(columns='source', inplace=True)
+    df = df.merge(source_df[['source']], left_index=True, right_index=True, how='left')
+    session.close()
+
+    df['source'] = df.apply(lambda x: x.source if isinstance(x.source, list) else [], axis=1)
+
     return df
 
 
@@ -274,8 +317,12 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase9_Olsen' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
-        (df['screening_phase'] == 'Not Screened') |
-        (df['orf_xrefs'].astype(str).str.contains('RibORF')) | 
+        (df['source'].apply(lambda x: 'MetaORF v1.0' in x)) | \
+        (df['source'].apply(lambda x: 'ENSEMBL' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase5_uniprot-tremble' in x)) | \
+        (df['screening_phase'] == 'Not Screened') | \
+        (df['orf_xrefs'].astype(str).str.contains('RibORF')) | \
+        (df['protein_xrefs'].astype(str).str.contains('RibORF')) | \
         (df['screening_phase'] == 'TEMPORARY_KEEP')) 
     
     ribo_df = df[df['Ribo-Seq sORF']].copy()
@@ -374,6 +421,7 @@ def load_mouse_blastp_results(CACHE_DIR=CACHE_DIR):
         hits_per_query, sorf_table_data = pickle.load(fopen)
     return hits_per_query, sorf_table_data
 
+
 @st.cache_data()
 def load_phylocsf_data():
     """
@@ -383,6 +431,7 @@ def load_phylocsf_data():
     pcsf = pcsf[['phylocsf_58m_avg', 'phylocsf_58m_max',
            'phylocsf_58m_min', 'phylocsf_58m_std', 'phylocsf_vals']]
     return pcsf
+
 
 @st.cache_data()
 def load_hmmer_results(vtx_id, hmmer_loc=HMMER_S3_LOC):

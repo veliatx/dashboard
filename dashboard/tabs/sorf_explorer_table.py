@@ -39,10 +39,15 @@ def sorf_details(sorf_df):
     st.title('sORF Table')
     
     filter_option = st.selectbox('Pre-filtered sORFs:', 
-                                    ('Secreted',
+                                    ('Secreted & Transmembrane',
+                                     'Secreted',
                                      'Secreted & Novel',
                                      'Secreted & Conserved',
                                      'Secreted & Conserved & Novel',
+                                     'Transmembrane',
+                                     'Transmembrane & Novel',
+                                     'Transmembrane & Conserved',
+                                     'Transmembrane & Conserved & Novel',
                                      ), index = 0, key='sorf_detail_filter_5')
     
     df = util.filter_dataframe_preset(sorf_df, filter_option)
