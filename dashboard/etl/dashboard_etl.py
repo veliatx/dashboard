@@ -180,6 +180,7 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
     input_filename = pathlib.Path(INPUT_FASTA_FILE).parts[-1]
     seqs = {k: str(v.seq) for k, v in SeqIO.to_dict(SeqIO.parse(INPUT_FASTA_FILE, 'fasta')).items()}
     
+    
     ## Phobius
     phobius_exec = f"docker run -v {OUTPUT_PREFIX}:/data 328315166908.dkr.ecr.us-west-2.amazonaws.com/secretions_tools:latest phobius -long /data/{input_filename}"
     phobius_data = subprocess.check_output(shlex.split(phobius_exec)).decode()
@@ -211,6 +212,7 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
     cmd = f"docker run --gpus all --rm -v {OUTPUT_PREFIX}:/data bolognabiocomp/deepsig -f /data/{input_filename} -o /data/deepsig.results -k euk -m json"
     subprocess.run(shlex.split(cmd))
     
+
     ## Parse results
     with open(f'{OUTPUT_PREFIX}/phobius.results.txt', 'r') as fopen:
         phobius_data = ''.join(fopen.readlines())

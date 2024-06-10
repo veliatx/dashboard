@@ -222,7 +222,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
         protein_etl_script = __file__.replace('update_cache.py', 'dashboard_etl.py')
         cmd = f"python {protein_etl_script} -i {vtx_aa_fasta_path} -o {output_prefix_path}"
         logging.info(f'Running protein feature prediction tools {cmd}')
-#        subprocess.run(shlex.split(cmd))
+        subprocess.run(shlex.split(cmd))
         write_nonsignal_aa_sequences(output_prefix_path)
         fasta_write_veliadb_protein_sequences(output_prefix_path) # Writes fastas with reference protein sequences in cache
         logging.info(f'Running protein search tools {cmd}')
@@ -239,7 +239,7 @@ def update_cache(vtx_ids_file, cache_dir, data_dir, overwrite, resume, run_prote
     sorf_df = merge_sorf_df_blast(sorf_df, blastp_table, cache_dir.joinpath('protein_data'))
 
     
-    # logging.info(f'Adding ESMFold data')
+    logging.info(f'Adding ESMFold data')
     esmfold = load_esmfold(cache_dir.joinpath('protein_data', 'esmfold.jsonlines'))
     sorf_df['ESMFold plddt 90th percentile'] = [np.percentile(esmfold[s.replace('*', '')]['plddt'], 90) if s.replace('*', '') in esmfold else -1 for s in sorf_df['aa'].values]
     sorf_df.to_parquet(cache_dir.joinpath('sorf_df.parq'))

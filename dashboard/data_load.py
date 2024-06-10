@@ -122,8 +122,8 @@ def load_sorf_df_conformed():
     df[['start', 'end']] = df[['start', 'end']].astype(int)
 
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
-    measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
-    df = df[(measured_secreted_or_predicted_secreted) | (df['DeepTMHMM_prediction'])]
+    #measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
+    #df = df[(measured_secreted_or_predicted_secreted) | (df['DeepTMHMM_prediction'])]
 
     return df
 
@@ -145,7 +145,7 @@ def reorder_table_cols(df):
         'Deepsig_cut', 'SignalP 6slow_cut', 'SignalP 5b_cut', 'SignalP 4.1_cut', 
         'Phobius', 'DeepTMHMM', 
         'translated_mean', 'secreted_mean', 'secreted', 'translated', 
-        'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
+        'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', #'ESMFold plddt 90th percentile',
         'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
         'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
         'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
@@ -312,18 +312,23 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase5_bona fide' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase6_plasma_mass_spec' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase6_public_mass_spec' in x)) | \
-        (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_orfrater' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_Olsen' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase9_Li et al VSMC' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase11_riboseq_240214' in x)) | \
+        (df['source'].apply(lambda x: 'swissprot' in x)) | \
         (df['source'].apply(lambda x: 'MetaORF v1.0' in x)) | \
         (df['source'].apply(lambda x: 'ENSEMBL' in x)) | \
+        (df['source'].apply(lambda x: 'BestRefSeq' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase5_uniprot-tremble' in x)) | \
         (df['screening_phase'] == 'Not Screened') | \
         (df['orf_xrefs'].astype(str).str.contains('RibORF')) | \
         (df['protein_xrefs'].astype(str).str.contains('RibORF')) | \
-        (df['screening_phase'] == 'TEMPORARY_KEEP')) 
+        (df['screening_phase'] == 'TEMPORARY_KEEP') | \
+        (df['MS or Riboseq'])
+    )
     
     ribo_df = df[df['Ribo-Seq sORF']].copy()
     x = ribo_df.groupby('aa').aggregate(list)
