@@ -198,7 +198,6 @@ def de_page(sorf_df):
                                                         'Secreted & Conserved',
                                                         'Secreted & Conserved & Novel',
                                                         ), index = 0, key='sorf_detail_filter2')
-    
     if not st.session_state.get('sorf_df') or filter_option != st.session_state['sorf_df']['filter_option']:
         
         # Clear session_state.
@@ -323,7 +322,8 @@ def de_page(sorf_df):
                     'velia_study', 'contrast', 'vtx_id', 'transcript_id', 'baseMean',
                     'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
                     'hgnc_name', 'case_mean', 'control_mean', 'tau', 'tissues', 
-                    'SNPS', 'MAPPED_TRAIT', 'P-VALUE'
+                    'spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
+                    'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb'
                 ]
 
                 gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
@@ -332,7 +332,8 @@ def de_page(sorf_df):
                                             right_index=True, how='left')
             
                 gene_de_df = gene_de_df.merge(
-                    sorf_df[['SNPS', 'MAPPED_TRAIT', 'P-VALUE']],
+                    sorf_df[['spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
+                             'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb']],
                     left_on='vtx_single', 
                     right_index=True, 
                     how='left',
@@ -433,6 +434,7 @@ def de_page(sorf_df):
                                 studies=selected_df_boxplots['velia_study'].tolist(),
                                 contrasts=selected_df_boxplots['contrast'].tolist(),
                                 sequenceregions=[x[1] for x in selected_pts_ids],
+                                exact_id_match=True,
                             )
                             normed_counts_df.rename(
                                 {'velia_id':'velia_study', 'contrast_name':'contrast', 'srx_id':'sample_id'}, 
@@ -465,6 +467,7 @@ def de_page(sorf_df):
                                 log10_padj_threshold=None,
                                 log2_fc_threshold=None,
                                 mean_threshold=None,
+                                exact_id_match=True,
                             )
                             stats_df.rename({'velia_id':'velia_study','contrast_name':'contrast'}, axis=1, inplace=True)
                             stats_df[['left','right']] = stats_df['contrast'].str.upper().str.split('_VS_', expand=True)
