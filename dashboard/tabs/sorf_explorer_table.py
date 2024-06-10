@@ -32,7 +32,6 @@ from multiplealignment import plotting_tools
 #     )
 
 def sorf_details(sorf_df):
-
     Session = base.configure(DB_CONNECTION_STRING)
     SessionRedshift = base.configure(REDSHIFT_CONNECTION_STRING)
 
@@ -110,7 +109,7 @@ def sorf_details(sorf_df):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'aa', 'transcripts_exact']])
 
-        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']
+        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact'].tolist()
         
         xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
 
@@ -147,8 +146,8 @@ def sorf_details(sorf_df):
                     selected_expression_ai = queries.query_samplemeasurement(
                                                                     session, 
                                                                     session_redshift, 
-                                                                    sequenceregions=selected_transcripts.tolist(),
-                                                                    exact_id_match=False,
+                                                                    sequenceregions=selected_transcripts,
+                                                                    exact_id_match=True,
                                                                 )
                     selected_expression_ai_ave = selected_expression_ai.pivot_table(
                                                                     index='atlas_group',
@@ -200,7 +199,7 @@ def sorf_details(sorf_df):
                                                                     session, 
                                                                     session_redshift, 
                                                                     sequenceregions=[selected_transcript_ai],
-                                                                    exact_id_match=False,
+                                                                    exact_id_match=True,
                                                                 ).fillna(0.01)
 
                     bar_plot_ai_df.rename({'contrast_name':'contrast','velia_id':'velia_study'}, axis=1, inplace=True)

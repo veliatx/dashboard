@@ -150,7 +150,6 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     """
 
     view_cols = list(sorf_df.columns)
-    view_cols = [col for col in view_cols if col not in ['transcript_xrefs', 'nucl']]
     df = sorf_df[view_cols].copy()
     
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']

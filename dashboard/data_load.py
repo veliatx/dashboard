@@ -62,7 +62,6 @@ def load_sorf_df_conformed():
     """
     df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
     df.drop('nonsignal_seqs', axis=1, inplace=True)
-    #df = df[df['aa_length'] <= 150].copy()
     
     df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb
     
@@ -101,8 +100,10 @@ def load_sorf_df_conformed():
     df.loc[keep_vtx_no_translated, 'screening_phase'] = 'TEMPORARY_KEEP'
 
     df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
-    
+    print(df.shape)
     df = add_temp_gwas(df)
+
+    df = add_temp_rarevar(df)
     
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
@@ -124,7 +125,8 @@ def load_sorf_df_conformed():
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
     df = df[(measured_secreted_or_predicted_secreted) | (df['DeepTMHMM_prediction'])]
-
+    
+    print(df.shape)
     return df
 
 
@@ -133,10 +135,10 @@ def reorder_table_cols(df):
     """
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
+        'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',
+        'transcripts_exact', 'chr', 'start', 'end',
         'screening_phase_id', 'screening_phase', 'genscript_id',
-        'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs', 
-        'transcripts_exact', 'aa', 'nucl', 'chr', 'strand', 'start', 'end',
-        'chrom_starts', 'block_sizes', 'phases', 
+        'aa', 'nonsignal_seqs', 'nucl', 
         'blastp_subject', 'blastp_hit_description',
         'blastp_align_length', 'blastp_align_identity', 
         'tblastn_hit_id', 'tblastn_description',
@@ -146,11 +148,11 @@ def reorder_table_cols(df):
         'Phobius', 'DeepTMHMM', 
         'translated_mean', 'secreted_mean', 'secreted', 'translated', 
         'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
-        'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
-        'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
-        'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
+        'MS_evidence', 'Ribo-Seq sORF', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
+        'DeepTMHMM_prediction', 'DeepTMHMM_length', 
         'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity',
-        'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
+        'spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
+        'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb']
     
     return df[view_cols]
 
@@ -158,10 +160,59 @@ def reorder_table_cols(df):
 def add_temp_gwas(df):
     """
     """
-    sorf_gwas_df = pd.read_csv(DATA_DIR.joinpath('embl_nhgri_gwas_v1.0.2.dashboard_sorfs.tsv'), sep='\t')
-    agg_df = sorf_gwas_df[['vtx_id', 'SNPS', 'MAPPED_TRAIT', 'P-VALUE']].groupby('vtx_id').aggregate(list)
-    df = df.merge(agg_df, left_index=True, right_index=True, how='left')
+    session = base.Session()
+
+    opentargets_df = pd.read_parquet(DATA_DIR.joinpath('genetics', 'opentargets_variant_summary_table.parq'))
+    opentargets_df = opentargets_df[~opentargets_df['orf_idx_str'].str.startswith('ENSG')]
+
+    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'ot_spdis', 'ot_pvals', 'ot_betas', 'ot_traits', ]
+    grouped_opentargets_df = opentargets_df[group_cols].groupby('orf_idx_str').aggregate(list)
+    vtx_map = dict(session.query(Orf.orf_idx_str, Orf.vtx_id).filter(Orf.orf_idx_str.in_(grouped_opentargets_df.index)).all())
+    grouped_opentargets_df.reset_index(inplace=True)
+    grouped_opentargets_df['vtx_id'] = grouped_opentargets_df.apply(lambda x: vtx_map[x['orf_idx_str']] if x['orf_idx_str'] in vtx_map.keys() else '', axis=1)
+    grouped_opentargets_df.set_index('vtx_id', inplace=True)
+    df = df.merge(grouped_opentargets_df, left_index=True, right_index=True, how='left')
+    df['coding_variant_ot'] = df.apply(lambda x: True in x['coding_change'] if isinstance(x['coding_change'], list) else False, axis=1)
+    df.set_index('vtx_id', inplace=True)
+    session.close()
+
+    return df
+
+
+def add_temp_rarevar(df):
+    """
+    """
+    session = base.Session()
+
+    genebass_df = pd.read_parquet(DATA_DIR.joinpath('genetics', 'genebass_variant_summary_table.parq'))
+    genebass_df = genebass_df[~genebass_df['orf_idx_str'].str.startswith('ENSG')]
+
+    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'gb_spdis', 'gb_pvals', 'gb_betas', 'gb_traits', ]
+
+    grouped_genebass_df = genebass_df[group_cols].groupby('orf_idx_str').aggregate(list)
+    vtx_map = dict(session.query(Orf.orf_idx_str, Orf.vtx_id).filter(Orf.orf_idx_str.in_(grouped_genebass_df.index)).all())
+    grouped_genebass_df.reset_index(inplace=True)
+    grouped_genebass_df['vtx_id'] = grouped_genebass_df.apply(lambda x: vtx_map[x['orf_idx_str']] if x['orf_idx_str'] in vtx_map.keys() else '', axis=1)
+    grouped_genebass_df = grouped_genebass_df[~pd.isna(grouped_genebass_df['vtx_id'])]
+    grouped_genebass_df.set_index('vtx_id', inplace=True)
+    df = df.merge(grouped_genebass_df, suffixes=('_ot', '_gb'), left_index=True, right_index=True, how='left')
+    df['coding_variant_gb'] = df.apply(lambda x: True in x['coding_change_gb'] if isinstance(x['coding_change_gb'], list) else False, axis=1)
+    #df.set_index('vtx_id', inplace=True)
+
+    df['spdis_ot'] = df['ot_spdis'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x).astype(str)
+    df['spdis_gb'] = df['gb_spdis'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x).astype(str)
+
+    df['consequences_ot'] = df['consequences_ot'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
+    df['consequences_gb'] = df['consequences_gb'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
+
+    df['trait_ot'] = df['ot_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
+    df['trait_gb'] = df['gb_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
+
+    df['pval_ot'] = df['ot_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
+    df['pval_gb'] = df['gb_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
     
+    session.close()
+
     return df
 
 
@@ -191,6 +242,7 @@ def add_temp_source(df):
                                      join(OrfXref, OrfXref.orf_id == Orf.id).\
                                      join(Dataset, Dataset.id == OrfXref.xref_dataset_id).\
                                      filter(Orf.vtx_id.in_(list(df['vtx_id']))).all())
+    
     source_df = source_df.groupby('vtx_id').aggregate(list)
     source_df['source'] = source_df.apply(lambda x: list(set(x['name'])), axis=1)
     df.drop(columns='source', inplace=True)
@@ -317,8 +369,10 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase9_Olsen' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase10_riboseq_230114' in x)) | \
+        (df['source'].apply(lambda x: 'velia_phase11_riboseq_240214' in x)) | \
         (df['source'].apply(lambda x: 'MetaORF v1.0' in x)) | \
         (df['source'].apply(lambda x: 'ENSEMBL' in x)) | \
+        (df['source'].apply(lambda x: 'BestRefSeq' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase5_uniprot-tremble' in x)) | \
         (df['screening_phase'] == 'Not Screened') | \
         (df['orf_xrefs'].astype(str).str.contains('RibORF')) | \

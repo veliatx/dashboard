@@ -158,8 +158,9 @@ def parse_orf(orf, session):
     ucsc_track = f'{orf.assembly.ucsc_style_name}:{orf.start}-{orf.end}'
 
     transcript_ids = list(set([t.transcript_id for t in session.query(TranscriptOrf).filter(TranscriptOrf.orf_id == orf.id).all()]))
-    transcript_xrefs = ';'.join([sx.xref for sx in session.query(TranscriptXref).filter(TranscriptXref.transcript_id.in_(transcript_ids)).all()])
-    exact_transcripts = [t for t in session.query(Transcript).filter(Transcript.id.in_(transcript_ids)).all() if t.ensembl_id != '']    
+    transcript_objects = [t for t in session.query(Transcript).filter(Transcript.id.in_(transcript_ids)).all()]
+    transcripts_exact = set([get_first_non_empty_property(t) for t in transcript_objects])
+    gene_ids = set([t.gene.id for t in transcript_objects])  
     
     protein_xrefs = ';'.join([str(px.xref) for px in \
                          session.query(ProteinXref)\
@@ -167,8 +168,6 @@ def parse_orf(orf, session):
                                 .filter(Protein.aa_seq == seqs).all()])
     
     gene_ids = set([t.gene.id for t in exact_transcripts])
-    exact_transcript_ids = [t.ensembl_id.split('.')[0] for t in exact_transcripts]
-
     gene_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(gene_ids)).all()])
     
     
@@ -189,11 +188,21 @@ def parse_orf(orf, session):
         'orf_xrefs': orf_xrefs,
         'gene_xrefs': gene_xrefs,
         'transcript_xrefs': transcript_xrefs,
-        'transcripts_exact': exact_transcript_ids,
+        'transcripts_exact': transcripts_exact,
         'protein_xrefs': protein_xrefs,
         'source': source
     }
-
+    
+def get_first_non_empty_property(obj):
+    if obj.ensembl_id != '':
+        id = obj.ensembl_id
+    elif obj.refseq_id != '':
+        id = obj.refseq_id
+    elif obj.chess_id != '':
+        id = obj.chess_id
+    else:
+        id = str(obj.id)
+    return id
 
 #def find_seq_substring(query, target_dict):
 #    if query == '':

@@ -407,8 +407,8 @@ def altair_protein_features_plot(df):
     )
     fig = base.mark_rect().encode(
         color=alt.Color('Predicted Class:O', scale=color_scale, legend=alt.Legend(
-        orient='none',
-        legendX=45, legendY=150,
+        orient='bottom',
+        # legendX=45, legendY=0,
         direction='horizontal',
         titleAnchor='middle')),
         tooltip = ['Position', 'Predicted Class'])
