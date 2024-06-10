@@ -364,7 +364,6 @@ def filter_riboseq(df):
         (df['source'].apply(lambda x: 'velia_phase5_bona fide' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase6_plasma_mass_spec' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase6_public_mass_spec' in x)) | \
-        (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_orfrater' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase9_Olsen' in x)) | \
         (df['source'].apply(lambda x: 'velia_phase7_Ribo-seq_PBMC_LPS_R848' in x)) | \
