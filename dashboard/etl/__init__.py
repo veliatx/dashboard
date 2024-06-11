@@ -1,6 +1,6 @@
 import pathlib
 module_path = __file__.replace('dashboard/etl/__init__.py', '')
-CACHE_DIR = pathlib.Path(module_path) / 'cache_20240610_v_1_11'
+CACHE_DIR = pathlib.Path(module_path) / 'cache_20240610_v_1_12'
 DATA_DIR = pathlib.Path(module_path) / 'data_20240610_v_1_11'
 NOTEBOOK_DATA_DIR = pathlib.Path(module_path) / 'scripts' / 'notebooks'
 HMMER_S3_LOC = 's3://velia-data-dev/VDC_004_annotation/hmmer/latest/'

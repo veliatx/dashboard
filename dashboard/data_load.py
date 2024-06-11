@@ -95,12 +95,14 @@ def load_sorf_df_conformed():
     VTX-0852041
     VTX-0015094
     VTX-0851455
-    VTX-0087278"""
+    VTX-0087278
+    VTX-0860277
+    VTX-0079370"""
     keep_vtx_no_translated = df['vtx_id'].isin([v.strip() for v in keep_vtx_no_translated.split('\n')])
     df.loc[keep_vtx_no_translated, 'screening_phase'] = 'TEMPORARY_KEEP'
 
     df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
-    print(df.shape)
+
     df = add_temp_gwas(df)
 
     df = add_temp_rarevar(df)
@@ -115,6 +117,8 @@ def load_sorf_df_conformed():
     df['vtx_id'] = df.index
     
     df = add_temp_nonsig_cons_info(df) # generates core output in run_protein_search_tools.py
+
+    df = add_temp_transcript_exact(df)
 
     df = reorder_table_cols(df)
     df.rename({'secreted': 'secreted_hibit',
@@ -149,7 +153,7 @@ def reorder_table_cols(df):
         'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
         'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
         'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
-        'nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
+        'DeepTMHMM_prediction', 'DeepTMHMM_length',
         'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity',
         'spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
         'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb']
@@ -339,6 +343,45 @@ def add_temp_ms_ribo_info(df):
     df['manual_riboseq'] = df.apply(lambda x: True if x.vtx_id in ribo_vtx else False, axis=1)
     df['MS_evidence'] = df.apply(lambda x: True if x.vtx_id in ms_vtx else False, axis=1)
     df['MS or Riboseq'] = df.apply(lambda x: True if x.vtx_id in support_vtx else False, axis=1)
+
+    return df
+
+
+def get_tx_synonyms(tx):
+    """
+    """
+    tx_synonyms = []
+    if tx.ensembl_id != '':
+        tx_synonyms.append(tx.ensembl_id)
+    if tx.refseq_id != '':
+        tx_synonyms.append(tx.refseq_id)
+    if tx.chess_id != '':
+        tx_synonyms.append(tx.chess_id)
+
+    return tx_synonyms
+
+
+def add_temp_transcript_exact(df):
+    """
+    """
+    session = base.Session()
+
+    orfs_query = session.query(Orf).filter(Orf.vtx_id.in_(df['vtx_id']))
+    vtx_orf_id_map = {o.id: o.vtx_id for o in orfs_query.all()}
+
+    tx_orf_df = pd.DataFrame(session.query(base.TranscriptOrf.orf_id, base.TranscriptOrf.transcript_id).filter(base.TranscriptOrf.orf_id.in_(vtx_orf_id_map.keys())).all())
+    transcripts = session.query(base.Transcript).filter(base.Transcript.id.in_(tx_orf_df['transcript_id'])).all()
+    tx_synonyms = {tx.id: get_tx_synonyms(tx) for tx in transcripts}
+
+    tx_orf_df['transcripts_exact'] = tx_orf_df.apply(lambda x: tx_synonyms[x.transcript_id], axis=1)
+    tx_orf_df['vtx_id'] = tx_orf_df.apply(lambda x: vtx_orf_id_map[x.orf_id], axis=1)
+
+    tx_group_df = tx_orf_df[['vtx_id', 'transcripts_exact']].groupby('vtx_id').aggregate(list)
+    tx_group_df['transcripts_exact'] = tx_group_df.apply(lambda x: list(set([subitem for item in x.transcripts_exact for subitem in item])), axis=1)
+
+    df.drop(columns='transcripts_exact', inplace=True)
+
+    df = df.merge(tx_group_df, left_index=True, right_index=True, how='left')
 
     return df
 

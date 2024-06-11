@@ -109,7 +109,7 @@ def sorf_details(sorf_df):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'aa', 'transcripts_exact']])
 
-        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact'].tolist()
+        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']#.tolist()
         
         xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
 
