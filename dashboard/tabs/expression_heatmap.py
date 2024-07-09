@@ -148,9 +148,12 @@ def tissue_specific_page(sorf_df):
         #st.write(xena_vtx_sum_df.astype(float))
         if selected_tissues and len(tissue_specific_vtx_ids) > 0:
             plot_df = xena_tau_df.drop(columns=['tau', 'tissues'])
-            display_cols = ['vtx_id', 'screening_phase_id', 'screening_phase', 'orf_xrefs', 'protein_xrefs',
-                            'gene_xrefs', 'transcript_xrefs', 'source', 'secreted_mean', 'translated_mean',
-                            'SNPS', 'MAPPED_TRAIT', 'P-VALUE']
+            display_cols = ['aa_length', 'source', 'protein_xrefs', 'uniprot_annotation_score', 
+                            'screening_phase_id',  
+                            'gene_xrefs', 'transcripts_exact', 'MetaORF v1.0 Score', 
+                            'secreted_mean', 'translated_mean',
+                             'trait_ot', 'coding_variant_ot', 
+                             'trait_gb', 'coding_variant_gb', 'ucsc_track',]
             
             # TODO: Can't determine linkage when only one sample/vtx_id. Need to change in expression_atlas_heatmap_plot. 
             if len(selected_tissues) > 1 and len(tissue_specific_vtx_ids) > 1:
@@ -164,11 +167,15 @@ def tissue_specific_page(sorf_df):
                     fig = plotting.expression_vtx_boxplot(value, xena_vtx_exp_df)
                     st.plotly_chart(fig, use_container_width=True)
 
-            df = sorf_df[sorf_df['vtx_id'].isin(tissue_specific_vtx_ids)][display_cols]
+            df = sorf_df[sorf_df['vtx_id'].isin(tissue_specific_vtx_ids)]#[display_cols]
             exp_df = xena_tau_df.loc[tissue_specific_vtx_ids][['tissues', 'tau']].copy()
             df = df.merge(exp_df, left_index=True, right_index=True)
             st.header('Tissue specific sORFs')
             
+            display_cols = ['tau', 'tissues'] + display_cols
+            
+            df = util.filter_dataframe_dynamic(df[display_cols], f'explorer_filter_tau')
+
             st.dataframe(df)
 
             st.download_button(

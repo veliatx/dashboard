@@ -319,11 +319,11 @@ def de_page(sorf_df):
             if filter_option == 'sORF Transcripts Only':
 
                 display_cols = [
-                    'velia_study', 'contrast', 'vtx_id', 'transcript_id', 'baseMean',
+                    'velia_study', 'contrast', 'vtx_id', 'source', 'transcript_id', 'baseMean',
                     'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
-                    'hgnc_name', 'case_mean', 'control_mean', 'tau', 'tissues', 
-                    'spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
-                    'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb'
+                    'hgnc_name', 'case_mean', 'control_mean', 'tau', 'tissues', 'uniprot_annotation_score',
+                    'spdis_ot', 'consequences_ot', 'trait_ot', 'coding_variant_ot',
+                    'spdis_gb', 'consequences_gb', 'trait_gb', 'coding_variant_gb'
                 ]
 
                 gene_de_df['vtx_single'] = gene_de_df.apply(lambda x: x.vtx_id[0], axis=1)
@@ -332,8 +332,8 @@ def de_page(sorf_df):
                                             right_index=True, how='left')
             
                 gene_de_df = gene_de_df.merge(
-                    sorf_df[['spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
-                             'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb']],
+                    sorf_df[['source', 'spdis_ot', 'consequences_ot', 'trait_ot', 'coding_variant_ot',
+                             'spdis_gb', 'consequences_gb', 'trait_gb', 'coding_variant_gb', 'uniprot_annotation_score',]],
                     left_on='vtx_single', 
                     right_index=True, 
                     how='left',
@@ -342,10 +342,10 @@ def de_page(sorf_df):
                 display_cols = [
                     'velia_study', 'contrast', 'transcript_id', 'baseMean',
                     'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
-                    'hgnc_name', 'case_mean', 'control_mean', 
+                    'hgnc_name', 'case_mean', 'control_mean', 'uniprot_annotation_score',
                 ]
             
-            gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter')
+            gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter_{gene_de_df.shape[0]}')
 
             vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
             tx_cnt = gene_de_df['transcript_id'].nunique()      

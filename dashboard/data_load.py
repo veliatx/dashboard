@@ -14,8 +14,9 @@ from dashboard.etl import CACHE_DIR, DATA_DIR, HMMER_S3_LOC, NOTEBOOK_DATA_DIR
 from ast import literal_eval
 from collections import defaultdict
 from pathlib import Path
+from sqlalchemy import and_
 from veliadb import base
-from veliadb.base import Orf, OrfXref, Dataset
+from veliadb.base import Protein, Orf, OrfXref, Dataset
 
 
 @st.cache_data()
@@ -106,7 +107,11 @@ def load_sorf_df_conformed():
     df = add_temp_gwas(df)
 
     df = add_temp_rarevar(df)
-    
+
+    df = add_temp_metaorf_score(df)
+
+    df = add_temp_uniprot_annotation(df)
+
     # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
     feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
@@ -138,25 +143,23 @@ def reorder_table_cols(df):
     """
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
-        'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'transcript_xrefs',
-        'transcripts_exact', 'chr', 'start', 'end',
-        'screening_phase_id', 'screening_phase', 'genscript_id',
-        'aa', 'nonsignal_seqs', 'nucl', 
+        'protein_xrefs', 'gene_xrefs', 'transcripts_exact', 
+        'screening_phase_id', 'uniprot_annotation_score', 'MetaORF v1.0 Score',
+        'aa', 'nonsignal_seqs', 
         'blastp_subject', 'blastp_hit_description',
-        'blastp_align_length', 'blastp_align_identity', 
+        'blastp_align_length', 'blastp_align_identity', 'nonsig_blastp_align_identity',
         'tblastn_hit_id', 'tblastn_description',
-        'tblastn_align_length', 'tblastn_align_identity', 
+        'tblastn_align_length', 'tblastn_align_identity', 'nonsig_tblastn_align_identity',
         'Deepsig_score', 'SignalP 6slow_score', 'SignalP 5b_score', 'SignalP 4.1_score', 
         'Deepsig_cut', 'SignalP 6slow_cut', 'SignalP 5b_cut', 'SignalP 4.1_cut', 
-        'Phobius', 'DeepTMHMM', 
+        'DeepTMHMM', 'DeepTMHMM_prediction', 'DeepTMHMM_length',
         'translated_mean', 'secreted_mean', 'secreted', 'translated', 
-        'phylocsf_58m_avg', 'phylocsf_58m_max', 'phylocsf_58m_min', 'ESMFold plddt 90th percentile',
-        'MS_evidence', 'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
-        'Ribo-Seq RPKM Support', 'Ribo-Seq sORF',
-        'DeepTMHMM_prediction', 'DeepTMHMM_length',
-        'nonsig_blastp_align_identity', 'nonsig_tblastn_align_identity',
-        'spdis_ot', 'consequences_ot', 'pval_ot', 'trait_ot', 'coding_variant_ot',
-        'spdis_gb', 'consequences_gb', 'pval_gb', 'trait_gb', 'coding_variant_gb']
+        'phylocsf_58m_avg', 'phylocsf_58m_max', 'ESMFold plddt 90th percentile',
+        'swissprot_isoform', 'ensembl_isoform', 'refseq_isoform', 
+        'spdis_ot', 'consequences_ot', 'trait_ot', 'coding_variant_ot',
+        'spdis_gb', 'consequences_gb', 'trait_gb', 'coding_variant_gb',
+        'chr', 'start', 'end', 'Ribo-Seq sORF'
+        ]
     
     return df[view_cols]
 
@@ -188,10 +191,10 @@ def add_temp_rarevar(df):
     """
     session = base.Session()
 
-    genebass_df = pd.read_parquet(DATA_DIR.joinpath('genetics', 'genebass_variant_summary_table.parq'))
+    genebass_df = pd.read_parquet(DATA_DIR.joinpath('genetics', 'genebass_variant_summary_table_20240612.parq'))
     genebass_df = genebass_df[~genebass_df['orf_idx_str'].str.startswith('ENSG')]
 
-    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'gb_spdis', 'gb_pvals', 'gb_betas', 'gb_traits', ]
+    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'gb_spdis', 'gb_pvals', 'gb_betas', 'gb_traits', 'gb_coding_descriptions']
 
     grouped_genebass_df = genebass_df[group_cols].groupby('orf_idx_str').aggregate(list)
     vtx_map = dict(session.query(Orf.orf_idx_str, Orf.vtx_id).filter(Orf.orf_idx_str.in_(grouped_genebass_df.index)).all())
@@ -210,11 +213,13 @@ def add_temp_rarevar(df):
     df['consequences_gb'] = df['consequences_gb'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
 
     df['trait_ot'] = df['ot_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
-    df['trait_gb'] = df['gb_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
+    #df['trait_gb'] = df['gb_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
 
     df['pval_ot'] = df['ot_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
     df['pval_gb'] = df['gb_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
     
+    df['trait_gb'] = df['gb_coding_descriptions'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
+
     session.close()
 
     return df
@@ -254,6 +259,29 @@ def add_temp_source(df):
     session.close()
 
     df['source'] = df.apply(lambda x: x.source if isinstance(x.source, list) else [], axis=1)
+
+    return df
+
+
+def add_temp_uniprot_annotation(df):
+    """
+    """
+    session = base.Session()
+    seqs = list(df['aa'].values)
+    aa_prot = {p.aa_seq: p for p in session.query(Protein).filter(Protein.aa_seq.in_(seqs)).all()}
+    
+    annotation_scores = []
+    for i, row in df.iterrows():
+        if row.aa in aa_prot.keys():
+            prot = aa_prot[row.aa]
+            try:
+                annotation_scores.append(prot.attrs['uniprot_annotation_score'])
+            except:
+                annotation_scores.append(-1.0)
+        else:
+            annotation_scores.append(-1.0)
+    
+    df['uniprot_annotation_score'] = annotation_scores
 
     return df
 
@@ -384,6 +412,24 @@ def add_temp_transcript_exact(df):
     df = df.merge(tx_group_df, left_index=True, right_index=True, how='left')
 
     return df
+
+
+def add_temp_metaorf_score(df):
+    """
+    """
+    session = base.Session()
+
+    metaorf_score_df = pd.DataFrame(session.query(OrfXref.orf_id, Orf.vtx_id, OrfXref.xref).\
+                    join(Orf, Orf.id == OrfXref.orf_id).\
+                    filter(Orf.vtx_id.in_(df.index)).\
+                    filter(and_(OrfXref.xref_dataset_id == 145, OrfXref.type == 'score')).all())
+    metaorf_score_df['xref'] = metaorf_score_df['xref'].astype(float)
+    df = df.merge(metaorf_score_df, left_index=True, right_on='vtx_id', how='left')
+    df.set_index('vtx_id', inplace=True)
+    df.rename(columns={'vtx_id_x':'vtx_id', 'xref': 'MetaORF v1.0 Score'}, inplace=True)
+
+    return df
+
 
 
 def filter_riboseq(df):

@@ -33,30 +33,23 @@ def main():
         "sORF Details": dashboard.tabs.sorf_explorer_table.sorf_details,
         #"sORF Transcriptome Atlas (TCGA)": dashboard.tabs.expression_heatmap.tcga_page,
         "sORF Genome Browser": genome_browser,
-        "sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page,
+        #"sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page,
         "DE Explorer": dashboard.tabs.de_explorer.de_page
     }
     sorf_df = load_sorf_df_conformed()
-    #tab1, tab2, tab3, tab4, tab5 = st.tabs(list(pages.keys()))
-    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    tab1, tab2, tab3 = st.tabs(list(pages.keys()))
 
     with tab1:
         dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df)
 
-    #with tab2:
-    #    dashboard.tabs.expression_heatmap.tcga_page(sorf_df)
     
     with tab2:
         genome_browser()
         
-    with tab3:
-        dashboard.tabs.riboseq_atlas.page()
     
-    with tab4:
+    with tab3:
        dashboard.tabs.de_explorer.de_page(sorf_df)
     
-    # with tab5:
-        # dashboard.tabs.sorf_prioritization.page(sorf_df)
     
 if __name__ == "__main__":
     # Config from riboseq atlas scripts

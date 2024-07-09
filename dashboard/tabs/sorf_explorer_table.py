@@ -107,7 +107,7 @@ def sorf_details(sorf_df):
 
         st.divider()
         st.header('sORF Details')
-        st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'orf_xrefs', 'protein_xrefs', 'gene_xrefs', 'aa', 'transcripts_exact']])
+        st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'protein_xrefs', 'transcripts_exact', 'gene_xrefs', 'aa']])
 
         selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']#.tolist()
         
