@@ -48,7 +48,7 @@ def sorf_details(sorf_df):
                                      'Transmembrane & Conserved',
                                      'Transmembrane & Conserved & Novel',
                                      ), index = 0, key='sorf_detail_filter_5')
-    
+    sorf_df.drop_duplicates('vtx_id', inplace=True)
     df = util.filter_dataframe_preset(sorf_df, filter_option)
 
     df = util.filter_dataframe_dynamic(df, f'explorer_filter')
@@ -109,7 +109,7 @@ def sorf_details(sorf_df):
         st.header('sORF Details')
         st.dataframe(selected_row[['vtx_id', 'screening_phase_id', 'protein_xrefs', 'transcripts_exact', 'gene_xrefs', 'aa']])
 
-        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact']#.tolist()
+        selected_transcripts = sorf_df.loc[vtx_id, 'transcripts_exact'] #.tolist()
         
         xena_overlap = xena_transcript_ids.intersection(set([i.split('.')[0] for i in selected_transcripts]))
 

@@ -108,7 +108,7 @@ def load_sorf_df_conformed():
 
     df = add_temp_rarevar(df)
 
-    df = add_temp_metaorf_score(df)
+    #df = add_temp_metaorf_score(df)
 
     df = add_temp_uniprot_annotation(df)
 
@@ -144,7 +144,7 @@ def reorder_table_cols(df):
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
         'protein_xrefs', 'gene_xrefs', 'transcripts_exact', 
-        'screening_phase_id', 'uniprot_annotation_score', 'MetaORF v1.0 Score',
+        'screening_phase_id', 'uniprot_annotation_score', #'MetaORF v1.0 Score',
         'aa', 'nonsignal_seqs', 
         'blastp_subject', 'blastp_hit_description',
         'blastp_align_length', 'blastp_align_identity', 'nonsig_blastp_align_identity',
@@ -429,7 +429,6 @@ def add_temp_metaorf_score(df):
     df.rename(columns={'vtx_id_x':'vtx_id', 'xref': 'MetaORF v1.0 Score'}, inplace=True)
 
     return df
-
 
 
 def filter_riboseq(df):
