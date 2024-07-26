@@ -108,7 +108,7 @@ def load_sorf_df_conformed():
 
     df = add_temp_rarevar(df)
 
-    #df = add_temp_metaorf_score(df)
+    df = add_temp_metaorf_score(df)
 
     df = add_temp_uniprot_annotation(df)
 
@@ -144,7 +144,7 @@ def reorder_table_cols(df):
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
         'protein_xrefs', 'gene_xrefs', 'transcripts_exact', 
-        'screening_phase_id', 'uniprot_annotation_score', #'MetaORF v1.0 Score',
+        'screening_phase_id', 'uniprot_annotation_score', 'MetaORF v1.0 Score',
         'aa', 'nonsignal_seqs', 
         'blastp_subject', 'blastp_hit_description',
         'blastp_align_length', 'blastp_align_identity', 'nonsig_blastp_align_identity',
@@ -423,10 +423,9 @@ def add_temp_metaorf_score(df):
                     join(Orf, Orf.id == OrfXref.orf_id).\
                     filter(Orf.vtx_id.in_(df.index)).\
                     filter(and_(OrfXref.xref_dataset_id == 145, OrfXref.type == 'score')).all())
-    metaorf_score_df['xref'] = metaorf_score_df['xref'].astype(float)
-    df = df.merge(metaorf_score_df, left_index=True, right_on='vtx_id', how='left')
-    df.set_index('vtx_id', inplace=True)
-    df.rename(columns={'vtx_id_x':'vtx_id', 'xref': 'MetaORF v1.0 Score'}, inplace=True)
+    metaorf_score_df = metaorf_score_df.groupby('vtx_id').first()
+    metaorf_score_df['MetaORF v1.0 Score'] = metaorf_score_df['xref'].astype(float)
+    df = df.merge(metaorf_score_df, left_index=True, right_index=True, how='left')
 
     return df
 
