@@ -21,19 +21,6 @@ import dashboard.tabs.riboseq_atlas
 import streamlit.components.v1 as components
 import smart_open
 
-# # Auto-wrap all the query functions in st.cache_data. 
-
-# for name, f in inspect.getmembers(queries, inspect.isfunction):
-#     setattr(
-#         queries, 
-#         name, 
-#         st.cache_data(f, ttl='1h', hash_funcs={
-#             'sqlalchemy.orm.session._Session': lambda _: None,
-#             'sqlalchemy.orm.attributes.InstrumentedAttribute': lambda _: None,
-#             'builtins.function': lambda _: None,
-#             },
-#         ),
-#     )
 
 def dataframe_with_selections(df):
     df_with_selections = df.copy()
