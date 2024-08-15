@@ -17,7 +17,7 @@ import plotly.express as px
 from pydeseq2.dds import DeseqDataSet
 
 APP_NAME = 'geo_explorer'
-DATA_PATH = '/home/ubuntu/repos/expression_atlas/geo_explorer'
+DATA_PATH = '/home/ec2-user/repos/expression_atlas/geo_explorer'
 RESULTS_FOLDER = 'geo_qc'
 
 def download_counts(GEO_ID:str) -> Union[pd.DataFrame,None]:
