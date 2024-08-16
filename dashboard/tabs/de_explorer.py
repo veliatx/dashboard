@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from typing import List, Tuple
-import inspect
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -19,6 +18,7 @@ from streamlit_plotly_events import plotly_events
 import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.riboseq_atlas
 import streamlit.components.v1 as components
+import random
 import smart_open
 
 
@@ -332,7 +332,7 @@ def de_page(sorf_df):
                     'hgnc_name', 'case_mean', 'control_mean', 'uniprot_annotation_score',
                 ]
             
-            gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter_{gene_de_df.shape[0]}')
+            gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter_{random.randint(1,1e6)}')
 
             vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()
             tx_cnt = gene_de_df['transcript_id'].nunique()      
