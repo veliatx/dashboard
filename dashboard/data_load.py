@@ -239,7 +239,20 @@ def add_temp_hibit(df):
     secreted_vtx = set(secreted_ph1to8_vtx + secreted_ph9_vtx)
 
     df['secreted'] = df.apply(lambda x: x.vtx_id in secreted_vtx or x['secreted'], axis=1)
+    hibit = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name = 'Primary HTS')
+    hibit_confirmation = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name = 'Confirmation HTS', index_col=0)
 
+    for ix, row in hibit.iterrows():
+        vtx_id = row['VTX ID']
+        if vtx_id not in df.index:
+            print(f'{vtx_id} not found in df please rerun etl.')
+        else:
+            for key in ['trans1', 'trans2', 'trans3', 'sec1', 'sec2', 'sec3']:
+                df.at[vtx_id, key] = row[key]
+            df.at[vtx_id, 'secreted_mean'] = np.nanmean(df.loc[vtx_id][['trans1', 'trans2', 'trans3']])
+            df.at[vtx_id, 'translated_mean'] = np.nanmean(df.loc[vtx_id][['sec1', 'sec2', 'sec3']])
+            df.at[vtx_id, 'secreted'] = True if hibit_confirmation.loc[vtx_id, 'secretion hit '] == 'Yes' else False
+            df.at[vtx_id, 'translated'] = True if hibit_confirmation.loc[vtx_id, 'translation hit'] == 'Yes' else False
     return df
 
 

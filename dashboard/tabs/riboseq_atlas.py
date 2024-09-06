@@ -8,12 +8,13 @@ import json
 from smart_open import open
 import streamlit.components.v1 as components
 
+session = boto3.Session()
 
 def get_job_names_on_s3():
     """Retrieves top-level folder names from the velia-piperuns-dev bucket starting with VPR_orfcalling."""
 
     folder_names = []
-    with open("s3://velia-piperuns-dev/summary/experiments_with_orfrater_results.csv") as experiments_csv:
+    with open("s3://velia-piperuns-dev/summary/experiments_with_orfrater_results.csv", transport_params={'session': session}) as experiments_csv:
         for index, row in pd.read_csv(experiments_csv, index_col=0).iterrows():
             folder_names.append(row.iloc[0])
     return folder_names
@@ -22,7 +23,7 @@ def get_job_names_on_s3():
 def get_description(experiment):
     """Returns a short description for the given ribo-seq pipeline run."""
 
-    with open(f"s3://velia-piperuns-dev/{experiment}/{experiment}.json") as json_file:
+    with open(f"s3://velia-piperuns-dev/{experiment}/{experiment}.json", transport_params={'session': session}) as json_file:
         parameters = json.load(json_file)
     return parameters["note"]
 
@@ -53,7 +54,7 @@ def get_coverge(experiment_name):
     riboseq_data = {}
     try:
         for line in open(f"s3://velia-piperuns-dev/{experiment_name}"
-                         f"/output/orfrater_results/{experiment_name}_extended.final.coverage.bed"):
+                         f"/output/orfrater_results/{experiment_name}_extended.final.coverage.bed", transport_params={'session': session}):
             elements = line.strip().split()
             candidate_id = elements[3]
             n_reads = int(elements[12])
@@ -73,11 +74,11 @@ def get_coverge(experiment_name):
             
 
     # read total
-    total_reads = int(open(f"s3://velia-piperuns-dev/{experiment_name}/output/aligned/{experiment_name}_count.txt").readline())
+    total_reads = int(open(f"s3://velia-piperuns-dev/{experiment_name}/output/aligned/{experiment_name}_count.txt", transport_params={'session': session}).readline())
 
     # update and normalize(RPKM) n_reads
     for line in open(f"s3://velia-piperuns-dev/{experiment_name}"
-                     f"/output/orfrater_results/{experiment_name}_all.final.coverage.bed"):
+                     f"/output/orfrater_results/{experiment_name}_all.final.coverage.bed", transport_params={'session': session}):
         elements = line.strip().split()
         candidate_id = elements[3]
         n_reads = int(elements[12])
@@ -91,7 +92,7 @@ def get_coverge(experiment_name):
 def get_average_coverage():
     """Returns a dataframe table containing ribo-seq coverage avergaed across each cell-type."""
 
-    with open("s3://velia-piperuns-dev/summary/avg_rpkm_all_experiments.csv") as experiments_csv:
+    with open("s3://velia-piperuns-dev/summary/avg_rpkm_all_experiments.csv", transport_params={'session': session}) as experiments_csv:
         coverage_df = pd.read_csv(experiments_csv, index_col=0)
     return coverage_df.round(0)
 

@@ -329,9 +329,9 @@ def de_page(sorf_df):
                 display_cols = [
                     'velia_study', 'contrast', 'transcript_id', 'baseMean',
                     'log2FoldChange', 'lfcSE', 'stat', 'pvalue', 'padj', 'log10_padj',
-                    'hgnc_name', 'case_mean', 'control_mean', 'uniprot_annotation_score',
+                    'hgnc_name', 'case_mean', 'control_mean',
                 ]
-            
+                
             gene_de_df = util.filter_dataframe_dynamic(gene_de_df, f'gene_de_filter_{random.randint(1,1e6)}')
 
             vtx_cnt = gene_de_df['vtx_id'].astype(str).nunique()

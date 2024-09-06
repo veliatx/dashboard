@@ -37,6 +37,7 @@ tissue_positions = {
     'THYROID': (0.5, 0.79),
     'SKELETAL_MUSCLE': (0.48, 0.25),
     'VISCERAL_ADIPOSE_TISSUE': (0.48, 0.58),
+    'HEART': (0.52, 0.73),
     'HEART_MUSCLE': (0.52, 0.72),
     'DUODENUM': (0.5, 0.63),
     'KIDNEY': (0.48, 0.59),
