@@ -117,7 +117,7 @@ def write_nonsignal_aa_sequences(protein_data_path):
         for col in signal_cols:
             if row[col].startswith('S'):
                 signal_len = row[col].count('S')
-                nonsignal_aa = row['Sequence'][signal_len:-1]
+                nonsignal_aa = row['Sequence'][signal_len:].strip('*')
                 break
         nonsignal_seqs.append(nonsignal_aa)
 
