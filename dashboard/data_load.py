@@ -126,9 +126,10 @@ def load_sorf_df_conformed():
     df = add_temp_transcript_exact(df)
 
     df = reorder_table_cols(df)
+
     df.rename({'secreted': 'secreted_hibit',
                'translated': 'translated_hibit'}, axis=1, inplace=True)
-    
+
     df[['start', 'end']] = df[['start', 'end']].astype(int)
 
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
@@ -249,10 +250,32 @@ def add_temp_hibit(df):
         else:
             for key in ['trans1', 'trans2', 'trans3', 'sec1', 'sec2', 'sec3']:
                 df.at[vtx_id, key] = row[key]
-            df.at[vtx_id, 'secreted_mean'] = np.nanmean(df.loc[vtx_id][['trans1', 'trans2', 'trans3']])
-            df.at[vtx_id, 'translated_mean'] = np.nanmean(df.loc[vtx_id][['sec1', 'sec2', 'sec3']])
+            df.at[vtx_id, 'translated_mean'] = np.nanmean(df.loc[vtx_id][['trans1', 'trans2', 'trans3']])
+            df.at[vtx_id, 'secreted_mean'] = np.nanmean(df.loc[vtx_id][['sec1', 'sec2', 'sec3']])
             df.at[vtx_id, 'secreted'] = True if hibit_confirmation.loc[vtx_id, 'secretion hit '] == 'Yes' else False
             df.at[vtx_id, 'translated'] = True if hibit_confirmation.loc[vtx_id, 'translation hit'] == 'Yes' else False
+            
+    p10 = pd.read_excel(DATA_DIR / 'Ph10_standardized.xlsx')
+    p11 = pd.read_excel(DATA_DIR / 'Ph11_standardized.xlsx')
+    p12 = pd.read_excel(DATA_DIR / 'phase12_standardized.xlsx')
+
+    merged = pd.concat((p10, p11, p12))
+    merged.index = merged['VTX ID']
+    hit_list = pd.read_excel(DATA_DIR / 'phase_10to12_hitlist.xlsx')
+    hit_list.drop_duplicates('VTX ID', inplace=True)
+    hit_list.index = hit_list['VTX ID']
+    for ix, row in merged.iterrows():
+        df.loc[ix, 'screening_phase'] = row['Phase name']
+        df.loc[ix, 'trans1'] = row['trans1']
+        df.loc[ix, 'trans2'] = row['trans2']
+        df.loc[ix, 'trans3'] = row['trans3']
+        df.loc[ix, 'sec1'] = row['sec1']
+        df.loc[ix, 'sec2'] = row['sec2']
+        df.loc[ix, 'sec3'] = row['sec3']
+        df.loc[ix, 'secreted_mean'] = np.nanmean(row[['sec1', 'sec2', 'sec3']])
+        df.loc[ix, 'translated_mean'] = np.nanmean(row[['trans1', 'trans2', 'trans3']])
+        df.loc[ix, 'secreted'] = True if hit_list.loc[ix, 'secreted_hit'] == 'Yes' else False
+        df.loc[ix, 'translated'] = True if hit_list.loc[ix, 'translated_hit'] == 'Yes' else False
     return df
 
 
