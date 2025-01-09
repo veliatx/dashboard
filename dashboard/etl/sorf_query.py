@@ -1,3 +1,15 @@
+"""Module for querying and processing sORF (small Open Reading Frame) data.
+
+This module provides functions and utilities for:
+- Loading and parsing sORF sequences from databases
+- Querying sORF metadata and annotations
+- Processing transcript and gene mappings
+- Handling phase/screening information
+
+The module interfaces with VeliaDB and external sequence databases to extract
+and process sORF-related data.
+"""
+
 import json
 import jsonlines
 import os
@@ -17,75 +29,56 @@ from sqlalchemy import and_, or_
 
 from veliadb import base
 from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
-                          TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref,
-                          TranscriptXref)
+                         TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref,
+                         TranscriptXref)
 from dashboard.etl import CACHE_DIR, DATA_DIR
 
 pd.options.display.max_columns = 100
 pd.options.display.max_rows = 100
 pd.options.display.max_colwidth = 200
-    
-"""
-def extract_nucleotide_sequence_veliadb(o, genome_seq):
-    seqs = []
-    blocks = [int(x) for x in o.block_sizes.split(';')]
-    chrom_starts = [int(x)-1 for x in o.chrom_starts.split(';')]
-
-    if '_' in o.assembly.ucsc_style_name:
-        chrom = o.assembly.ucsc_style_name.split('_')[1].replace('v', '.')
-    else:
-        chrom = o.assembly.ucsc_style_name
-   
-    for i, block in enumerate(blocks):
-        if o.strand == '-':
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + block + 1)].reverse_complement().seq).upper())
-        else:
-            seqs.append(str(genome_seq[chrom][chrom_starts[i]:(chrom_starts[i] + block + 1)].seq).upper())
-    
-    if o.strand == '-':    
-        seqs.reverse()
-    seq = ''.join(seqs)     
-    return seq, str(Seq(seq).translate())
-"""
 
 current_folder = pathlib.Path(__file__).parents[0]
-# Function to parse the FASTA content
-def parse_fasta(fasta_content):
+
+
+def parse_fasta(fasta_content: str) -> list:
+    """Parse FASTA format content into SeqIO records.
+
+    Args:
+        fasta_content: String containing FASTA formatted sequences
+
+    Returns:
+        List of SeqIO records
+    """
     fasta_io = StringIO(fasta_content)
     records = list(SeqIO.parse(fasta_io, "fasta"))
     return records
 
 
+# Load transcript sequences
 with smart_open.open('s3://velia-annotation-dev/gencode/v42/gencode.v42.transcripts.fa.gz') as f:
     transcripts = f.read()
     transcripts = parse_fasta(transcripts)
     transcripts = {r.id: str(r.seq).lower() for r in transcripts}
 
 
-def parallel_sorf_query(vtx_id):#, genome_reference):
-    # Query DB
-    session = base.Session() # connect to db
+def parallel_sorf_query(vtx_id: str) -> dict:
+    """Query sORF data for a given VTX ID.
+
+    Args:
+        vtx_id: VTX identifier for the sORF
+
+    Returns:
+        Dictionary containing sORF attributes and annotations
+    """
+    session = base.Session()  # connect to db
     try:
         orf = session.query(Orf).filter(Orf.vtx_id == vtx_id).one()
     except Exception as e:
         print(e)
-    
-    #if orf.start != -1 and orf.nt_seq == '' or orf.aa_seq == '':
-    #    try:
-    #        nt_reconstructed, aa_reconstructed = extract_nucleotide_sequence_veliadb(orf, genome_reference)
-    #        aa_reconstructed = aa_reconstructed.strip('*')
-    #    except:
-    #        print(f'Could not extract sequence for {vtx_id}')
-    #        if orf.aa_seq == '':
-    #            print(f'No registered AA seq')
-    #            return
-    #else:
-    #    nt_reconstructed = orf.nt_seq
-    #    aa_reconstructed = orf.aa_seq
-    
+
     nt_reconstructed = orf.nt_seq
     aa_reconstructed = orf.aa_seq
-    
+
     if orf.nt_seq == nt_reconstructed:
         nt = orf.nt_seq
     elif orf.nt_seq == '':
@@ -103,26 +96,31 @@ def parallel_sorf_query(vtx_id):#, genome_reference):
 
     aa = aa.strip('*')
 
-    #r_internal = find_seq_substring(nt, transcripts)
-    #transcripts_exact = [i.split('|')[0] for i in r_internal if i.startswith('ENST')]
-    # overlapping_tids = query_overlapping_transcripts(current_orf, session)
-    # overlapping_tids = [[i.split('.')[0] for i in [t.ensembl_id, t.refseq_id, t.chess_id] if i][0] for t in overlapping_tids]
     attributes = parse_orf(orf, session)
-    #attributes['transcripts_exact'] = transcripts_exact
-    # attributes['transcripts_overlapping'] = overlapping_tids
-    # if attributes['aa'] == '':
     attributes['aa'] = aa.replace('*', '')
-    # if attributes['nucl'] == '':
     attributes['nucl'] = nt
     session.close()
     return attributes
 
 
-class OrfData(object):
+class OrfData:
+    """Class wrapper for ORF query results to allow multiprocessing.
+
+    Attributes:
+        id: ORF identifier
+        start: Start position
+        end: End position
+        strand: Strand orientation
+        assembly: Assembly information
+        chrom_starts: Chromosome start positions
+        block_sizes: Exon block sizes
+        phases: Phase information
+        assembly_id: Assembly identifier
+        secondary_orf_id: Secondary ORF identifier
     """
-    Class wrapper for orf query results to allow multiprocessing to iterate over orf objects
-    """
+
     def __init__(self, orf_query_object):
+        """Initialize OrfData object from database query result."""
         self.id = orf_query_object.id
         self.start = orf_query_object.start
         self.end = orf_query_object.end
@@ -135,14 +133,21 @@ class OrfData(object):
         self.secondary_orf_id = orf_query_object.secondary_orf_id
 
 
-def parse_orf(orf, session):
+def parse_orf(orf: Orf, session) -> dict:
+    """Parse ORF object and extract relevant attributes.
+
+    Args:
+        orf: ORF database object
+        session: Database session
+
+    Returns:
+        Dictionary containing parsed ORF attributes
+    """
     orf_xrefs = ';'.join([ox.xref for ox in session.query(OrfXref).filter(OrfXref.orf_id == orf.id).all() if ox.xref])
     pattern = r'U\w{9}-[0-9]*'
     match = re.search(pattern, orf_xrefs)
-    if match:
-        genscript_id = match.group()
-    else:
-        genscript_id = ""
+    genscript_id = match.group() if match else ""
+
     vtx_id = orf.vtx_id
     chrom = orf.assembly.ucsc_style_name
     strand = orf.strand
@@ -154,24 +159,23 @@ def parse_orf(orf, session):
     seqs = orf.aa_seq.rstrip('*')
 
     source = ';'.join(set([x.orf_data_source.name for x in orf.xref]))
-        
     ucsc_track = f'{orf.assembly.ucsc_style_name}:{orf.start}-{orf.end}'
 
     transcript_ids = list(set([t.transcript_id for t in session.query(TranscriptOrf).filter(TranscriptOrf.orf_id == orf.id).all()]))
     transcript_xrefs = ';'.join([sx.xref for sx in session.query(TranscriptXref).filter(TranscriptXref.transcript_id.in_(transcript_ids)).all()])
     transcript_objects = [t for t in session.query(Transcript).filter(Transcript.id.in_(transcript_ids)).all()]
     transcripts_exact = set([get_first_non_empty_property(t) for t in transcript_objects])
-    gene_ids = set([t.gene.id for t in transcript_objects])  
-    
-    protein_xrefs = ';'.join([str(px.xref) for px in \
-                         session.query(ProteinXref)\
-                                .join(Protein, Protein.id == ProteinXref.protein_id)\
-                                .filter(Protein.aa_seq == seqs).all()])
-    
+    gene_ids = set([t.gene.id for t in transcript_objects])
+
+    protein_xrefs = ';'.join([str(px.xref) for px in
+                             session.query(ProteinXref)
+                             .join(Protein, Protein.id == ProteinXref.protein_id)
+                             .filter(Protein.aa_seq == seqs).all()])
+
     gene_xrefs = ';'.join([sx.xref for sx in session.query(SequenceRegionXref).filter(SequenceRegionXref.sequence_region_id.in_(gene_ids)).all()])
     exact_transcripts = [t for t in session.query(Transcript).filter(Transcript.id.in_(transcript_ids)).all() if t.ensembl_id != '']
     exact_transcript_ids = [t.ensembl_id.split('.')[0] for t in exact_transcripts]
-    
+
     return {
         'vtx_id': vtx_id,
         'genscript_id': genscript_id,
@@ -193,8 +197,17 @@ def parse_orf(orf, session):
         'protein_xrefs': protein_xrefs,
         'source': source
     }
-    
-def get_first_non_empty_property(obj):
+
+
+def get_first_non_empty_property(obj: Transcript) -> str:
+    """Get first non-empty identifier from transcript object.
+
+    Args:
+        obj: Transcript object
+
+    Returns:
+        First available identifier (ensembl, refseq, chess or internal id)
+    """
     if obj.ensembl_id != '':
         id = obj.ensembl_id
     elif obj.refseq_id != '':
@@ -205,48 +218,17 @@ def get_first_non_empty_property(obj):
         id = str(obj.id)
     return id
 
-#def find_seq_substring(query, target_dict):
-#    if query == '':
-#        return []
-#    else:
-#        return [k for k, s in target_dict.items() if query.lower() in s]
 
-#if not os.path.exists(os.path.join(current_folder, 'reference.fa')):
-#    with smart_open.open(GENOME_REFERENCE_PATH) as fhandle:
-#        with open(os.path.join(current_folder, 'reference.fa'), 'w') as f:
-#            for line in tqdm(fhandle.readlines()):
-#                f.write(line)
-# def query_overlapping_transcripts(o, session):
-#     results = session.query(Transcript).filter(and_(o.start >= Transcript.start, 
-#                                       o.end <= Transcript.end, 
-#                                       o.strand == Transcript.strand,
-#                                       o.assembly_id == Transcript.assembly_id)).all()
-#     return results
+def load_jsonlines_table(path_to_file: str, index_col: str = None) -> pd.DataFrame:
+    """Load JSON Lines file into pandas DataFrame.
 
-"""
-def compute_exact_transcript_matches(o):
-    nt, aa = extract_nucleotide_sequence_veliadb(o, reference)
-    r_internal = find_seq_substring(nt, transcripts)
-    return o.id, nt, aa, [i.split('|')[0].split('.')[0] for i in r_internal]
+    Args:
+        path_to_file: Path to JSON Lines file
+        index_col: Column to use as index
 
-
-def run_id_mapping_parallel(orfs, NCPU = 1):
-    import multiprocessing as mp
-    results = {}
-    if NCPU is None:
-        NCPU = mp.cpu_count()
-    if NCPU > 1:
-        with mp.Pool(NCPU) as ppool:            
-            for r0 in tqdm(ppool.imap(compute_exact_transcript_matches, orfs), total=len(orfs)):
-                results[r0[0]] = r0[1:]
-    else:
-        for o in tqdm(orfs):
-            r = compute_exact_transcript_matches(o)
-            results[r[0]] = r[1:]
-    return results
-"""
-
-def load_jsonlines_table(path_to_file, index_col = None):
+    Returns:
+        DataFrame containing parsed JSON Lines data
+    """
     with open(path_to_file) as fh:
         results = []
         for line in tqdm(fh.readlines()):
@@ -259,7 +241,16 @@ def load_jsonlines_table(path_to_file, index_col = None):
     return df
 
 
-def parse_sorf_phase(sorf_df, session):
+def parse_sorf_phase(sorf_df: pd.DataFrame, session) -> tuple:
+    """Parse screening phase information from sORF data.
+
+    Args:
+        sorf_df: DataFrame containing sORF data
+        session: Database session
+
+    Returns:
+        Tuple of (phase_ids, phase_entries)
+    """
     phase_ids = []
     phase_entries = []
     for row in sorf_df.itertuples():
@@ -278,7 +269,7 @@ def parse_sorf_phase(sorf_df, session):
             phase_entries.append('Phase 1')
         else:
             orf = session.query(Orf).filter(Orf.vtx_id == row.vtx_id).one()
-            
+
             if orf.secondary_orf_id.startswith('Phase'):
                 phase_entries.append(f'Phase {orf.vtx_id[6]}')
                 phase_ids.append(orf.vtx_id)
@@ -288,11 +279,19 @@ def parse_sorf_phase(sorf_df, session):
     return phase_ids, phase_entries
 
 
-def fix_missing_phase_ids(sorf_df):
+def fix_missing_phase_ids(sorf_df: pd.DataFrame) -> pd.DataFrame:
+    """Fix missing phase IDs in sORF DataFrame.
+
+    Args:
+        sorf_df: DataFrame containing sORF data
+
+    Returns:
+        DataFrame with fixed phase IDs
+    """
     sorf_df = sorf_df.copy()
-    missing_phase_ids = sorf_df[sorf_df['screening_phase']=='-1'].index
+    missing_phase_ids = sorf_df[sorf_df['screening_phase'] == '-1'].index
     interim_sheet = pd.read_csv(os.path.join(DATA_DIR, 'interim_phase1to7_all_20230717.csv'), index_col=0)
-    # source = interim_sheet.loc[sorf_df[sorf_df['screening_phase']=='-1'].index]['source']
+
     new_phase_ids = []
     for vtx in missing_phase_ids:
         if vtx in interim_sheet.index:
