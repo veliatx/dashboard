@@ -275,7 +275,7 @@ def add_temp_hibit(df):
         if ix not in df.index:
             print(ix)
             continue
-        df.loc[ix, 'screening_phase'] = row['Phase name']
+        df.loc[ix, 'screening_phase_id'] = row['Phase name']
         df.loc[ix, 'trans1'] = row['trans1']
         df.loc[ix, 'trans2'] = row['trans2']
         df.loc[ix, 'trans3'] = row['trans3']
