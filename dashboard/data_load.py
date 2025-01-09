@@ -1,8 +1,14 @@
+"""
+Data loading utilities for the sORF dashboard.
+
+This module contains functions for loading and preprocessing various data sources
+used in the dashboard, including protein features, expression data, and annotations.
+"""
+
 import json
 import jsonlines
 import pickle
 import numpy as np
-
 import pandas as pd
 import pyarrow.parquet as pq
 import streamlit as st
@@ -21,62 +27,66 @@ from veliadb.base import Protein, Orf, OrfXref, Dataset
 
 @st.cache_data()
 def load_autoimmune_atlas():
-    """
+    """Load autoimmune atlas metadata.
+    
+    Returns:
+        pd.DataFrame: Metadata dataframe with atlas grouping information.
     """
     meta = pd.read_parquet("s3://velia-athena-dev/expression_atlas_v1_metadata.parq")
     meta['dashboard_group'] = meta['atlas_group']
     return meta
 
+
 @st.cache_data()
 def load_autoimmune_metadata():
-
-    """
-    Temporary table for joining contrasts from the autoimmune studies to specific samples.
-    To be replaced by table in autoimmune sqlitedb.
+    """Load autoimmune metadata and contrast information.
+    
+    Returns:
+        tuple: (contrast_samples DataFrame, sample_metadata DataFrame)
     """
     with sqlite3.connect(DATA_DIR.joinpath('autoimmune_expression_atlas_v1.db')) as sqliteConnection:
-        contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", sqliteConnection)#pd.read_csv(CACHE_DIR.joinpath('de_contrast_table.csv'))
+        contrast_samples = pd.read_sql("SELECT * FROM transcript_contrast", sqliteConnection)
         sample_meta_df = pd.read_sql(
-                                f"""SELECT
-                                        sample_id, 
-                                        sample_condition_1,
-                                        sample_condition_2,
-                                        sample_condition_3,
-                                        sample_type_1,
-                                        sample_type_2
-                                    FROM sample_metadata""",
-                                sqliteConnection,
-                            )
+            """SELECT
+                sample_id,
+                sample_condition_1,
+                sample_condition_2, 
+                sample_condition_3,
+                sample_type_1,
+                sample_type_2
+            FROM sample_metadata""",
+            sqliteConnection,
+        )
             
     contrast_samples.index = contrast_samples.apply(lambda x: f"{x['velia_study']} -- {x['contrast']}", axis=1)
     contrast_samples.index.name = 'study -- contrast'
     contrast_samples['display'] = contrast_samples.apply(
-                                    lambda x: f"{x.velia_study} -- " +
-                                        f"{x.contrast.upper().split('VS')[0 if x.contrast_side == 'left' else 1].strip('_')}", 
-                                    axis=1,
-                                    )
+        lambda x: f"{x.velia_study} -- " +
+            f"{x.contrast.upper().split('VS')[0 if x.contrast_side == 'left' else 1].strip('_')}", 
+        axis=1,
+    )
     return contrast_samples, sample_meta_df
+
 
 @st.cache_data()
 def load_sorf_df_conformed():
-    """
+    """Load and preprocess the main sORF dataframe.
+    
+    Returns:
+        pd.DataFrame: Processed sORF dataframe with additional annotations.
     """
     df = pd.read_parquet(CACHE_DIR.joinpath('sorf_df.parq'))
     df.drop('nonsignal_seqs', axis=1, inplace=True)
     
-    df = add_temp_ms_ribo_info(df) # Fine it's not cache it's data until ribo-seq info is in veliadb
-    
-    df = add_temp_isoform_info(df) # Converted to use ETL format
-    
-    df = add_temp_tblastn_info(df) # Uses ETL Version
-
+    df = add_temp_ms_ribo_info(df)
+    df = add_temp_isoform_info(df)
+    df = add_temp_tblastn_info(df)
     df = add_temp_source(df)
-
     df = add_temp_hibit(df)
 
-    # TODO: These are getting filtered because Ribo-Seq sORF is not flagged for these transcripts. 
-    keep_vtx_no_translated = \
-    """VTX-0850289
+    # Add temporary VTX IDs that should be kept despite missing Ribo-Seq flags
+    keep_vtx_no_translated = """
+    VTX-0850289
     VTX-0087278
     VTX-0774612
     VTX-0850643
@@ -98,21 +108,17 @@ def load_sorf_df_conformed():
     VTX-0851455
     VTX-0087278
     VTX-0860277
-    VTX-0079370"""
+    VTX-0079370
+    """.strip()
     keep_vtx_no_translated = df['vtx_id'].isin([v.strip() for v in keep_vtx_no_translated.split('\n')])
     df.loc[keep_vtx_no_translated, 'screening_phase'] = 'TEMPORARY_KEEP'
 
-    df = filter_riboseq(df) # Fine?? doesn't rely on any data/cache info, but could perform this in cache update too
-
+    df = filter_riboseq(df)
     df = add_temp_gwas(df)
-
     df = add_temp_rarevar(df)
-
     df = add_temp_metaorf_score(df)
-
     df = add_temp_uniprot_annotation(df)
 
-    # df = add_temp_feature_info(df) # Columns added directly to the sequence_features_strings.csv file
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
     feature_cols = ['nonsignal_seqs', 'DeepTMHMM_prediction', 'DeepTMHMM_length']
     df = df.merge(feature_df[feature_cols], left_index=True, right_index=True, how='left')
@@ -121,12 +127,9 @@ def load_sorf_df_conformed():
     df[isoform_cols] = df[isoform_cols].apply(lambda x: [str(i) if isinstance(i, np.ndarray) else 'None' for i in x], axis=0)
     df['vtx_id'] = df.index
     
-    df = add_temp_nonsig_cons_info(df) # generates core output in run_protein_search_tools.py
-
+    df = add_temp_nonsig_cons_info(df)
     df = add_temp_transcript_exact(df)
-
     df = reorder_table_cols(df)
-
     df.rename({'secreted': 'secreted_hibit',
                'translated': 'translated_hibit'}, axis=1, inplace=True)
 
@@ -140,7 +143,13 @@ def load_sorf_df_conformed():
 
 
 def reorder_table_cols(df):
-    """
+    """Reorder dataframe columns into a standard order.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with reordered columns
     """
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
@@ -160,20 +169,26 @@ def reorder_table_cols(df):
         'spdis_ot', 'consequences_ot', 'trait_ot', 'coding_variant_ot',
         'spdis_gb', 'consequences_gb', 'trait_gb', 'coding_variant_gb',
         'chr', 'start', 'end', 'Ribo-Seq sORF'
-        ]
+    ]
     
     return df[view_cols]
 
 
 def add_temp_gwas(df):
-    """
+    """Add GWAS information from OpenTargets.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added GWAS annotations
     """
     session = base.Session()
 
     opentargets_df = pd.read_parquet(DATA_DIR.joinpath('genetics', 'opentargets_variant_summary_table.parq'))
     opentargets_df = opentargets_df[~opentargets_df['orf_idx_str'].str.startswith('ENSG')]
 
-    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'ot_spdis', 'ot_pvals', 'ot_betas', 'ot_traits', ]
+    group_cols = ['orf_idx_str', 'consequences', 'coding_change', 'ot_spdis', 'ot_pvals', 'ot_betas', 'ot_traits']
     grouped_opentargets_df = opentargets_df[group_cols].groupby('orf_idx_str').aggregate(list)
     vtx_map = dict(session.query(Orf.orf_idx_str, Orf.vtx_id).filter(Orf.orf_idx_str.in_(grouped_opentargets_df.index)).all())
     grouped_opentargets_df.reset_index(inplace=True)
@@ -188,7 +203,13 @@ def add_temp_gwas(df):
 
 
 def add_temp_rarevar(df):
-    """
+    """Add rare variant information from GeneBass.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added rare variant annotations
     """
     session = base.Session()
 
@@ -205,7 +226,6 @@ def add_temp_rarevar(df):
     grouped_genebass_df.set_index('vtx_id', inplace=True)
     df = df.merge(grouped_genebass_df, suffixes=('_ot', '_gb'), left_index=True, right_index=True, how='left')
     df['coding_variant_gb'] = df.apply(lambda x: True in x['coding_change_gb'] if isinstance(x['coding_change_gb'], list) else False, axis=1)
-    #df.set_index('vtx_id', inplace=True)
 
     df['spdis_ot'] = df['ot_spdis'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x).astype(str)
     df['spdis_gb'] = df['gb_spdis'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x).astype(str)
@@ -214,7 +234,6 @@ def add_temp_rarevar(df):
     df['consequences_gb'] = df['consequences_gb'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
 
     df['trait_ot'] = df['ot_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
-    #df['trait_gb'] = df['gb_traits'].apply(lambda x: ';'.join(x) if isinstance(x, list) else x)
 
     df['pval_ot'] = df['ot_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
     df['pval_gb'] = df['gb_pvals'].apply(lambda x: ';'.join([str(y) for y in x]) if isinstance(x, list) else x)
@@ -227,7 +246,13 @@ def add_temp_rarevar(df):
 
 
 def add_temp_hibit(df):
-    """
+    """Add HiBiT screening data.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added HiBiT screening results
     """
     df['nucl_no_stop'] = df.apply(lambda x: x.nucl[:-3], axis=1)
     phase9_mapper = pd.read_parquet(DATA_DIR / 'phase9_vtx_to_genscript.parq')
@@ -241,8 +266,8 @@ def add_temp_hibit(df):
     secreted_vtx = set(secreted_ph1to8_vtx + secreted_ph9_vtx)
 
     df['secreted'] = df.apply(lambda x: x.vtx_id in secreted_vtx or x['secreted'], axis=1)
-    hibit = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name = 'Primary HTS')
-    hibit_confirmation = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name = 'Confirmation HTS', index_col=0)
+    hibit = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name='Primary HTS')
+    hibit_confirmation = pd.read_excel(DATA_DIR.joinpath('phase12_standardized.xlsx'), sheet_name='Confirmation HTS', index_col=0)
 
     for ix, row in hibit.iterrows():
         vtx_id = row['VTX ID']
@@ -292,7 +317,13 @@ def add_temp_hibit(df):
 
 
 def add_temp_source(df):
-    """
+    """Add source information from VeliaDB.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added source annotations
     """
     session = base.Session()
     source_df = pd.DataFrame(session.query(Orf.vtx_id, Dataset.name).\
@@ -312,7 +343,13 @@ def add_temp_source(df):
 
 
 def add_temp_uniprot_annotation(df):
-    """
+    """Add UniProt annotation scores.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added UniProt annotation scores
     """
     session = base.Session()
     seqs = list(df['aa'].values)
@@ -335,17 +372,27 @@ def add_temp_uniprot_annotation(df):
 
 
 def add_temp_nonsig_cons_info(df):
-    ""
-    ""
+    """Add conservation information for non-signal peptide regions.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added conservation scores
+    """
     tdf = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'nonsignal_seq_blast_tblastn.parq'))
-
     df = df.merge(tdf, left_index=True, right_index=True, how='left')
-
     return df
 
 
 def add_temp_feature_info(df):
-    """
+    """Add protein feature predictions.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added protein feature predictions
     """
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
 
@@ -376,34 +423,52 @@ def add_temp_feature_info(df):
 
 
 def add_temp_tblastn_info(df):
-    """
+    """Add tblastn search results.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added tblastn results
     """
     tblastn_df = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'mouse_tblastn.parq'))
     df = df.merge(tblastn_df[['tblastn_hit_id', 'tblastn_description',
-                              'tblastn_align_length', 'tblastn_align_identity', 'tblastn_evalue']], how='left', left_index=True, right_index=True)               
+                              'tblastn_align_length', 'tblastn_align_identity', 'tblastn_evalue']], 
+                              how='left', left_index=True, right_index=True)               
     df.drop('phylocsf_vals', axis=1, inplace=True)
     
     return df
 
 
 def add_temp_isoform_info(df):
-    """
+    """Add isoform mapping information.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added isoform mappings
     """
     df.drop(columns=['swissprot_isoform', 
-                        'ensembl_isoform', 
-                        'refseq_isoform'], inplace=True)
+                    'ensembl_isoform', 
+                    'refseq_isoform'], inplace=True)
 
     isoforms = pd.read_parquet(CACHE_DIR.joinpath('protein_data', 'isoforms_search.parq'))
 
     isoform_cols = ['swissprot_isoform', 'ensembl_isoform', 'refseq_isoform'] 
     df = df.merge(isoforms, left_index=True, right_index=True, how='left')
-    # df[isoform_cols] = df[isoform_cols].apply(lambda x: [literal_eval(y) for y in x])
 
     return df
 
 
 def add_temp_ms_ribo_info(df):
-    """
+    """Add mass spec and ribosome profiling evidence.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added MS and Ribo-seq evidence
     """
     ribo_df = pd.read_excel(DATA_DIR.joinpath('Secreted_mP_Riboseq_SAF.xlsx'))
     ribo_vtx = set(ribo_df[ribo_df['manual_check'] == 1]['vtx_id'])
@@ -424,7 +489,13 @@ def add_temp_ms_ribo_info(df):
 
 
 def get_tx_synonyms(tx):
-    """
+    """Get transcript synonyms from different databases.
+    
+    Args:
+        tx: Transcript object
+        
+    Returns:
+        list: List of transcript synonyms
     """
     tx_synonyms = []
     if tx.ensembl_id != '':
@@ -438,7 +509,13 @@ def get_tx_synonyms(tx):
 
 
 def add_temp_transcript_exact(df):
-    """
+    """Add exact transcript matches.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added transcript matches
     """
     session = base.Session()
 
@@ -463,7 +540,13 @@ def add_temp_transcript_exact(df):
 
 
 def add_temp_metaorf_score(df):
-    """
+    """Add MetaORF scores.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Dataframe with added MetaORF scores
     """
     session = base.Session()
 
@@ -479,9 +562,13 @@ def add_temp_metaorf_score(df):
 
 
 def filter_riboseq(df):
-    """
-    Temporary function to enforce ribo-seq filtering
-    for primary entries in collection
+    """Filter for entries with Ribo-seq evidence.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe
+        
+    Returns:
+        pd.DataFrame: Filtered dataframe
     """
     df['Ribo-Seq sORF'] = (
         (df['source'].apply(lambda x: 'gencode_riboseq' in x)) | \

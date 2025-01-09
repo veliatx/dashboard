@@ -1,3 +1,9 @@
+"""
+Main Streamlit application for the sORF differential expression dashboard.
+
+This module sets up the main application interface with multiple tabs for exploring
+differential expression data, genome browser visualization, and Ribo-seq data.
+"""
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -11,45 +17,52 @@ import dashboard.tabs.de_explorer
 
 APP_NAME = 'de'
 
+
 def genome_browser():
-    """
-    """
-    components.iframe("http://10.65.25.231:8080/velia_collections.html", height=1200, scrolling=True)
+    """Display an embedded genome browser iframe."""
+    components.iframe(
+        "http://10.65.25.231:8080/velia_collections.html",
+        height=1200,
+        scrolling=True
+    )
 
 
 def main():
-    
+    """Initialize and run the main Streamlit application."""
     st.set_page_config(layout="wide")
-    st.markdown(""" <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """, unsafe_allow_html=True)
+    
+    # Set custom styling
+    st.markdown(
+        """ <style>iframe[title="streamlit_echarts.st_echarts"]{ height: 1000px !important } """,
+        unsafe_allow_html=True
+    )
     with open("style.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     
-    # Define a dictionary with the page names and corresponding functions
+    # Define available pages/tabs
     pages = {
         "DE Explorer": dashboard.tabs.de_explorer.de_page,
-        #"sORF Transcriptome Atlas (TCGA)": dashboard.tabs.expression_heatmap.tcga_page,
         "sORF Genome Browser": genome_browser,
         "sORF Ribo-seq Atlas": dashboard.tabs.riboseq_atlas.page,
     }
     
+    # Load data and create tabs
     sorf_df = load_sorf_df_conformed()
     tab1, tab2, tab3 = st.tabs(list(pages.keys()))
     
+    # Populate tabs with content
     with tab1:
-       dashboard.tabs.de_explorer.de_page(sorf_df)
-       
+        dashboard.tabs.de_explorer.de_page(sorf_df)
+        
     with tab2:
         genome_browser()
         
     with tab3:
         dashboard.tabs.riboseq_atlas.page()
 
-    
-    # with tab5:
-        # dashboard.tabs.sorf_prioritization.page(sorf_df)
-    
+
 if __name__ == "__main__":
-    # Config from riboseq atlas scripts
+    # Initialize session state variables for Ribo-seq atlas
     if "experiments" not in st.session_state:
         st.session_state["experiments"] = []
     if "count" not in st.session_state:
