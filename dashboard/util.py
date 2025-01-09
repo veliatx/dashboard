@@ -11,16 +11,33 @@ import streamlit as st
 import sqlite3
 
 
-def strip_ensembl_versions(transcript_ids):
+def strip_ensembl_versions(transcript_ids: list) -> list:
+    """Remove version numbers from Ensembl transcript IDs.
+    
+    Args:
+        transcript_ids: List of transcript IDs
+        
+    Returns:
+        List of transcript IDs with version numbers removed for Ensembl IDs
+    """
     return [i.split('.')[0] if i.startswith('ENST') else i for i in transcript_ids]
 
 
-def query_de_transcripts(transcript_id, 
-                      db_address,
-                      log10padj_threshold = -2, 
-                      minimum_expression = 2):
-    # if isinstance(transcripts, str):
-    #     transcripts = [transcripts]
+def query_de_transcripts(transcript_id: str,
+                        db_address: str,
+                        log10padj_threshold: float = -2,
+                        minimum_expression: float = 2) -> pd.DataFrame:
+    """Query differential expression data for a transcript.
+    
+    Args:
+        transcript_id: Transcript identifier
+        db_address: Path to SQLite database
+        log10padj_threshold: Maximum log10 adjusted p-value threshold
+        minimum_expression: Minimum expression threshold in TPM
+        
+    Returns:
+        DataFrame containing differential expression results
+    """
     con = sqlite3.connect(db_address)
     query = f"""SELECT *
     FROM transcript_de
@@ -31,31 +48,47 @@ def query_de_transcripts(transcript_id,
     return pd.read_sql(query, con)
 
 
-def query_transcript_tpms(transcript_id_list, 
-                          db_address):
+def query_transcript_tpms(transcript_id_list: list,
+                        db_address: str) -> pd.DataFrame:
+    """Query TPM values for a list of transcripts.
+    
+    Args:
+        transcript_id_list: List of transcript identifiers
+        db_address: Path to SQLite database
+        
+    Returns:
+        DataFrame containing TPM values for requested transcripts
+    """
     con = sqlite3.connect(db_address)
     query = f"""SELECT * FROM transcript_tpm
                 WHERE transcript_tpm.transcript_id IN ({', '.join(transcript_id_list)});
              """
     return pd.read_sql(query, con)
-    
+
 
 @st.cache_data()
-def convert_df(df):
+def convert_df(df: pd.DataFrame) -> bytes:
+    """Convert DataFrame to CSV bytes.
+    
+    Args:
+        df: Input DataFrame
+        
+    Returns:
+        UTF-8 encoded CSV bytes
+    """
     return df.to_csv().encode('utf-8')
 
 
-def filter_dataframe_dynamic(df: pd.DataFrame, key='details') -> pd.DataFrame:
-    """
-    Adds a UI on top of a dataframe to let viewers filter columns
+def filter_dataframe_dynamic(df: pd.DataFrame, key: str = 'details') -> pd.DataFrame:
+    """Add interactive filtering UI on top of a DataFrame.
 
     Args:
-        df (pd.DataFrame): Original dataframe
+        df: Original DataFrame
+        key: Unique key for Streamlit widget state
 
     Returns:
-        pd.DataFrame: Filtered dataframe
+        Filtered DataFrame based on user selections
     """
-
     df = df.copy()
 
     # Try to convert datetimes into a standard format (datetime, no timezone)
@@ -68,7 +101,6 @@ def filter_dataframe_dynamic(df: pd.DataFrame, key='details') -> pd.DataFrame:
 
         if is_datetime64_any_dtype(df[col]):
             df[col] = df[col].dt.tz_localize(None)
-
 
     modification_container = st.container()
 
@@ -109,9 +141,6 @@ def filter_dataframe_dynamic(df: pd.DataFrame, key='details') -> pd.DataFrame:
                     user_date_input = tuple(map(pd.to_datetime, user_date_input))
                     start_date, end_date = user_date_input
                     df = df.loc[df[column].between(start_date, end_date)]
-            
-            #elif is_list_like(df[col]):
-            #    df[col] = df[col].astype(str)
             else:
                 user_text_input = right.text_input(
                     f"Substring or regex in {column}",
@@ -122,7 +151,17 @@ def filter_dataframe_dynamic(df: pd.DataFrame, key='details') -> pd.DataFrame:
     return df
 
 
-def ucsc_link(chrom, start, end):
+def ucsc_link(chrom: str, start: int, end: int) -> str:
+    """Generate UCSC Genome Browser link for a genomic region.
+    
+    Args:
+        chrom: Chromosome name
+        start: Start position
+        end: End position
+        
+    Returns:
+        URL to UCSC Genome Browser showing specified region
+    """
     base_link = "http://genome.ucsc.edu/cgi-bin/hgTracks?"
     genome = "db=hg38"
     position = f"{chrom}:{start}-{end}"
@@ -130,25 +169,28 @@ def ucsc_link(chrom, start, end):
     return ucsc_link
 
 
-def convert_list_string(x):
-    l = list(map(float, x.strip('][').split(',')))
-    return l
-
-
-def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
+def convert_list_string(x: str) -> list:
+    """Convert string representation of list to actual list of floats.
+    
+    Args:
+        x: String representation of list (e.g. '[1.0, 2.0, 3.0]')
+        
+    Returns:
+        List of float values
     """
-    Filter sORF dataframe based on preset categories
+    return list(map(float, x.strip('][').split(',')))
+
+
+def filter_dataframe_preset(sorf_df: pd.DataFrame, filter_option: str) -> pd.DataFrame:
+    """Filter sORF DataFrame based on preset categories.
 
     Args:
-        sorf_df: pd.DataFrame
-            Original dataframe
-        filter_option: str
-            Key to specify preset filtering strategy
+        sorf_df: Original DataFrame containing sORF data
+        filter_option: Key specifying preset filtering strategy
 
     Returns:
-        pd.DataFrame: Filtered dataframe
+        Filtered DataFrame based on selected preset category
     """
-
     view_cols = list(sorf_df.columns)
     df = sorf_df[view_cols].copy()
     
@@ -162,44 +204,34 @@ def filter_dataframe_preset(sorf_df, filter_option)-> pd.DataFrame:
     
     if filter_option == 'Secreted & Transmembrane':
         df = df[df['Ribo-Seq sORF']]
-
     elif filter_option == 'Secreted':
         df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted]
-    
     elif filter_option == 'Secreted & Novel':
-        df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted & \
-                is_not_isoform
-                ]
-
+        df = df[(df['Ribo-Seq sORF']) & measured_secreted_or_predicted_secreted & is_not_isoform]
     elif filter_option == 'Secreted & Conserved':
-        df = df[(df['Ribo-Seq sORF']) & \
-                measured_secreted_or_predicted_secreted & \
+        df = df[(df['Ribo-Seq sORF']) & 
+                measured_secreted_or_predicted_secreted & 
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
     elif filter_option == 'Secreted & Conserved & Novel':
-        df = df[(df['Ribo-Seq sORF']) & \
-                measured_secreted_or_predicted_secreted & \
-                is_not_isoform & \
+        df = df[(df['Ribo-Seq sORF']) & 
+                measured_secreted_or_predicted_secreted & 
+                is_not_isoform & 
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
-    elif filter_option ==  'Transmembrane':
-        df = df[(df['Ribo-Seq sORF']) & \
-                ~measured_secreted_or_predicted_secreted & \
+    elif filter_option == 'Transmembrane':
+        df = df[(df['Ribo-Seq sORF']) & 
+                ~measured_secreted_or_predicted_secreted & 
                 (df['DeepTMHMM_prediction'])]
-
-    elif filter_option ==  'Transmembrane & Conserved':
-        df = df[(df['Ribo-Seq sORF']) & \
-                ~measured_secreted_or_predicted_secreted & \
-                (df['DeepTMHMM_prediction']) & \
+    elif filter_option == 'Transmembrane & Conserved':
+        df = df[(df['Ribo-Seq sORF']) & 
+                ~measured_secreted_or_predicted_secreted & 
+                (df['DeepTMHMM_prediction']) & 
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
-        
-    elif filter_option ==  'Transmembrane & Conserved & Novel':
-        df = df[(df['Ribo-Seq sORF']) & \
-                ~measured_secreted_or_predicted_secreted & \
-                (df['DeepTMHMM_prediction']) & \
-                is_not_isoform & \
+    elif filter_option == 'Transmembrane & Conserved & Novel':
+        df = df[(df['Ribo-Seq sORF']) & 
+                ~measured_secreted_or_predicted_secreted & 
+                (df['DeepTMHMM_prediction']) & 
+                is_not_isoform & 
                 (df[conservation_cols] > conservation_threshold).any(axis=1)]
-
     elif filter_option == 'All sORFs':
         pass
 
