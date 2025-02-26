@@ -5,8 +5,8 @@ import pathlib
 from collections import defaultdict
 import json
 
-from veliadb import base
-from veliadb.base import Protein, ProteinXref, Orf, Dataset
+from orfdb import base
+from orfdb.base import Protein, ProteinXref, Orf, Dataset
 import smart_open
 
 def merge_sorf_df_blast(sorf_df, blastp_table, protein_data_path):

@@ -7,8 +7,8 @@ from dashboard.tabs.riboseq_atlas import get_average_coverage
 from dashboard.etl import module_path
 from dashboard.etl.run_protein_search_tools import run_protein_search_tools
 
-from veliadb import base
-from veliadb.base import Protein, ProteinXref, Orf
+from orfdb import base
+from orfdb.base import Protein, ProteinXref, Orf
 
 from Bio import SeqIO
 from io import BytesIO

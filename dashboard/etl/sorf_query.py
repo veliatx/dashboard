@@ -15,8 +15,8 @@ from io import StringIO
 from copy import deepcopy
 from sqlalchemy import and_, or_
 
-from veliadb import base
-from veliadb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
+from orfdb import base
+from orfdb.base import (Assembly, Gene, Transcript, Protein, Orf, OrfXref, Protein,
                           TranscriptOrf, Cds, Dataset, SequenceRegionXref, Exon, ProteinXref,
                           TranscriptXref)
 from dashboard.etl import CACHE_DIR, DATA_DIR
