@@ -21,8 +21,8 @@ from ast import literal_eval
 from collections import defaultdict
 from pathlib import Path
 from sqlalchemy import and_
-from veliadb import base
-from veliadb.base import Protein, Orf, OrfXref, Dataset
+from orfdb import base
+from orfdb.base import Protein, Orf, OrfXref, Dataset
 
 
 @st.cache_data()
@@ -116,7 +116,7 @@ def load_sorf_df_conformed():
     df = filter_riboseq(df)
     df = add_temp_gwas(df)
     df = add_temp_rarevar(df)
-    df = add_temp_metaorf_score(df)
+    # df = add_temp_metaorf_score(df)
     df = add_temp_uniprot_annotation(df)
 
     feature_df = pd.read_csv(CACHE_DIR.joinpath('protein_data', 'sequence_features_strings.csv'), index_col=0)
@@ -138,7 +138,9 @@ def load_sorf_df_conformed():
     signal_cols = ['SignalP 4.1_cut', 'SignalP 5b_cut', 'SignalP 6slow_cut', 'Deepsig_cut']
     measured_secreted_or_predicted_secreted = df['secreted_hibit'] | (df[signal_cols] > -1).any(axis=1)
     df = df[(measured_secreted_or_predicted_secreted) | (df['DeepTMHMM_prediction'])]
-
+    nan_transcripts = df[df['transcripts_exact'].apply(lambda x: isinstance(x, float))].index
+    for v in nan_transcripts:
+        df.at[v, 'transcripts_exact'] = []
     return df
 
 
@@ -154,7 +156,7 @@ def reorder_table_cols(df):
     view_cols = [
         'show_details', 'vtx_id', 'aa_length', 'ucsc_track', 'source', 
         'protein_xrefs', 'gene_xrefs', 'transcripts_exact', 
-        'screening_phase_id', 'uniprot_annotation_score', 'MetaORF v1.0 Score',
+        'screening_phase_id', 'uniprot_annotation_score',# 'MetaORF v1.0 Score',
         'aa', 'nonsignal_seqs', 
         'blastp_subject', 'blastp_hit_description',
         'blastp_align_length', 'blastp_align_identity', 'nonsig_blastp_align_identity',

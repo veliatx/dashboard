@@ -14,8 +14,8 @@ import dashboard.tabs.riboseq_atlas
 import dashboard.tabs.sorf_explorer_table
 import dashboard.tabs.expression_heatmap
 import dashboard.tabs.sorf_prioritization
-import dashboard.tabs.de_explorer
-import dashboard.tabs.expression_atlas_summary
+# import dashboard.tabs.de_explorer
+# import dashboard.tabs.expression_atlas_summary
 
 APP_NAME = 'sorf'
 
@@ -50,12 +50,13 @@ def main():
     pages = {
         "sORF Details": dashboard.tabs.sorf_explorer_table.sorf_details,
         "sORF Genome Browser": genome_browser,
-        "DE Explorer": dashboard.tabs.de_explorer.de_page,
-        "Expression Atlas": dashboard.tabs.expression_atlas_summary.expression_atlas_summary,
+        # "DE Explorer": dashboard.tabs.de_explorer.de_page,
+        # "Expression Atlas": dashboard.tabs.expression_atlas_summary.expression_atlas_summary,
     }
     
     sorf_df = load_sorf_df_conformed()
-    tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    # tab1, tab2, tab3, tab4 = st.tabs(list(pages.keys()))
+    tab1, tab2 = st.tabs(list(pages.keys()))
 
     with tab1:
         dashboard.tabs.sorf_explorer_table.sorf_details(sorf_df)
@@ -63,11 +64,11 @@ def main():
     with tab2:
         genome_browser()
         
-    with tab3:
-        dashboard.tabs.de_explorer.de_page(sorf_df)
+    # with tab3:
+        # dashboard.tabs.de_explorer.de_page(sorf_df)
 
-    with tab4:
-        dashboard.tabs.expression_atlas_summary.expression_atlas_summary()
+    # with tab4:
+    #     dashboard.tabs.expression_atlas_summary.expression_atlas_summary()
 
 
 if __name__ == "__main__":
