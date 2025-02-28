@@ -13,13 +13,13 @@ cd dashboard
 pip install -r requirements.txt
 
 Usage
-# Add new orfs to the dashboard.
-# Depends on ORF being present in ORFDB
-# Create input txt file with VTX IDs one id per line
-# dashboard_update --help for more info
+#Add new orfs to the dashboard.
+#Depends on ORF being present in ORFDB
+#Create input txt file with VTX IDs one id per line
+#dashboard_update --help for more info
 dashboard_update /path/to/vtx_input_file.txt /path/to/output/cache /path/to/data
 
-# Launches the streamlit app
+#Launches the streamlit app
 streamlit run /path/to/sorf_app.py
 
 
