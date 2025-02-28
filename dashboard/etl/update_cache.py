@@ -91,7 +91,6 @@ def pfunc(i):
 @click.argument('vtx_ids_file', type=click.Path(exists=True, resolve_path=True))
 @click.argument('cache_dir', type=click.Path(resolve_path=True))
 @click.argument('data_dir', type=click.Path(exists=True, resolve_path=True))
-# @click.argument('protein_tools_path', type=click.Path(exists=True, resolve_path=True))
 
 @click.option("--overwrite", is_flag=True, show_default=True, 
               default=False, help="Whether to overwrite existing cache directory")
