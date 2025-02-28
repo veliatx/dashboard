@@ -188,7 +188,7 @@ def run_protein_feature_tools(INPUT_FASTA_FILE, OUTPUT_PREFIX, number_threads=8)
         fopen.write(phobius_data)
     
     ## DeepTMHMM
-    os.system(f"BIOLIB_DOCKER_RUNTIME=nvidia biolib run --local DTU/DeepTMHMM --fasta {INPUT_FASTA_FILE}")
+    os.system(f"BIOLIB_DOCKER_RUNTIME=nvidia biolib run --local DTU/DeepTMHMM:1.0.24 --fasta {INPUT_FASTA_FILE}")
     os.system(f"mv biolib_results {OUTPUT_PREFIX}/biolib_results")
 
     ## SignalP6 slow
